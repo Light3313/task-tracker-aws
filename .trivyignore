@@ -1,0 +1,14 @@
+# .trivyignore — accept ONLY what cannot be fixed, each with a reason + review date.
+# Anything fixable (undici, etc.) is fixed in code/image and does NOT belong here.
+
+# AVD-DS-0026 (LOW): Dockerfile without HEALTHCHECK.
+# Reason: the healthcheck is defined at the orchestration layer — docker-compose (app/nginx),
+#   and, under Kubernetes, liveness/readiness probes (a Dockerfile HEALTHCHECK is ignored under k8s).
+#   Duplicating it in the Dockerfile = redundant.
+# Accepted: 2026-06-23. Review: when Kubernetes probes are introduced — confirm they cover this.
+AVD-DS-0026
+
+# --- TEMPLATE for future no-fix CVEs (when no upstream fix exists yet) ---
+# CVE-XXXX-XXXXX
+#   Reason: no fix available upstream (e.g. openssl/zlib in alpine).
+#   Actual exploitability: <low/context>. Accepted: <date>. Review: monthly.

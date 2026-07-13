@@ -1,0 +1,69 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { cookies } from "next/headers";
+import { config } from "./config";
+
+// Stateless signed session cookie:  base64url(payload) "." HMAC-SHA256(payload, SESSION_SECRET)
+//
+// Why this matters operationally: the signature requires SESSION_SECRET. That secret
+// must be injected securely in prod (AWS Secrets Manager / K8s Secret), never baked
+// into the image or committed. Rotating it invalidates all sessions.
+
+const COOKIE_NAME = "session";
+const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
+
+type SessionPayload = { userId: number; exp: number };
+
+function sign(data: string): string {
+  return createHmac("sha256", config.sessionSecret).update(data).digest("base64url");
+}
+
+function createToken(userId: number): string {
+  const payload: SessionPayload = {
+    userId,
+    exp: Math.floor(Date.now() / 1000) + MAX_AGE_SECONDS,
+  };
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${body}.${sign(body)}`;
+}
+
+function verifyToken(token: string | undefined): SessionPayload | null {
+  if (!token) return null;
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return null;
+
+  const expected = sign(body);
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  // constant-time compare to avoid leaking signature validity via timing
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as SessionPayload;
+    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+export async function setSessionCookie(userId: number): Promise<void> {
+  const store = await cookies();
+  store.set(COOKIE_NAME, createToken(userId), {
+    httpOnly: true, // JS can't read it -> mitigates token theft via XSS
+    secure: process.env.NODE_ENV === "production", // HTTPS-only in production (once TLS is in front)
+    sameSite: "lax", // CSRF mitigation
+    path: "/",
+    maxAge: MAX_AGE_SECONDS,
+  });
+}
+
+export async function clearSessionCookie(): Promise<void> {
+  const store = await cookies();
+  store.delete(COOKIE_NAME);
+}
+
+export async function getSessionUserId(): Promise<number | null> {
+  const store = await cookies();
+  const payload = verifyToken(store.get(COOKIE_NAME)?.value);
+  return payload?.userId ?? null;
+}

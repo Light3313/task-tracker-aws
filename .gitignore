@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+build/
+
+# Never commit real secrets / local env
+.env
+.env.local
+.env*.local
+
+*.log
+next-env.d.ts
+.DS_Store

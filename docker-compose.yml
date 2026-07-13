@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:e013e867e712fec275706a6c51c966f0bb0c93cfa8f51000f85a15f9865a28cb
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: "1024M"
+          pids: 100
+
+    environment:
+      POSTGRES_USER: taskuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: tasktracker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U taskuser -d tasktracker" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - db-net
+  app:
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: "256M"
+          pids: 100
+
+    build: .
+    environment:
+      - SESSION_SECRET=${SESSION_SECRET:?set SESSION_SECRET in .env}
+      - DATABASE_URL=postgres://taskuser:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/tasktracker
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/healthz || exit 1" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-net
+      - db-net
+  nginx:
+
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+
+    image: nginx:1.31.2-alpine@sha256:1a8724a52d432501548a8d8681bb1554c2d09778f8b9ed0882fc3442549980b7
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "256M"
+          pids: 100
+
+    ports:
+      - "8088:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - app-net
+      - edge-net
+
+volumes:
+  pgdata:
+
+networks:
+  edge-net:
+  db-net:
+    internal: true
+  app-net:
+    internal: true
