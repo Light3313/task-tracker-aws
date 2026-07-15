@@ -13,7 +13,7 @@ resource "aws_subnet" "public_1a" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "us-east-1a"
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
 
   tags = {
     Name = "public_1a"
@@ -24,7 +24,7 @@ resource "aws_subnet" "public_1b" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.2.0/24"
   availability_zone       = "us-east-1b"
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
 
   tags = {
     Name = "public_1b"
@@ -75,7 +75,7 @@ resource "aws_route_table_association" "private_1b_private_rt" {
 }
 
 # IGW
-resource "aws_internet_gateway" "tt_igw" {
+resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
   tags = {
@@ -105,5 +105,58 @@ resource "aws_route" "public_rt_route" {
   route_table_id = aws_route_table.public_rt.id
 
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.tt_igw.id
+  gateway_id             = aws_internet_gateway.main.id
+}
+
+
+# Flow Logs for main VPC
+resource "aws_flow_log" "main" {
+  iam_role_arn    = aws_iam_role.vpc_flow_logs.arn
+  log_destination = aws_cloudwatch_log_group.vpc_flow_logs.arn
+  traffic_type    = "ALL"
+  vpc_id          = aws_vpc.main.id
+}
+
+#trivy:ignore:AVD-AWS-0017 default CWL encryption is sufficient
+resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
+  name              = "/vpc/task-tracker/vpc-flowlogs"
+  retention_in_days = 3
+}
+
+data "aws_iam_policy_document" "flow_logs_trust" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["vpc-flow-logs.amazonaws.com"]
+    }
+
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "vpc_flow_logs" {
+  name               = "tt-vpc-flow-logs"
+  assume_role_policy = data.aws_iam_policy_document.flow_logs_trust.json
+}
+
+data "aws_iam_policy_document" "flow_logs_permissions" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+      "logs:DescribeLogStreams",
+    ]
+
+    resources = ["${aws_cloudwatch_log_group.vpc_flow_logs.arn}:*"]
+  }
+}
+
+resource "aws_iam_role_policy" "access_cloudwatch_logging" {
+  name   = "AccessCloudWatchLogging"
+  role   = aws_iam_role.vpc_flow_logs.id
+  policy = data.aws_iam_policy_document.flow_logs_permissions.json
 }

@@ -12,6 +12,7 @@ resource "aws_security_group" "sg_alb" {
 resource "aws_vpc_security_group_ingress_rule" "alb_from_internet_80" {
   security_group_id = aws_security_group.sg_alb.id
 
+  description = "Inbound HTTP from the internet to the ALB"
   cidr_ipv4   = "0.0.0.0/0"
   ip_protocol = "tcp"
   from_port   = 80
@@ -21,8 +22,11 @@ resource "aws_vpc_security_group_ingress_rule" "alb_from_internet_80" {
 resource "aws_vpc_security_group_egress_rule" "alb_egress_all" {
   security_group_id = aws_security_group.sg_alb.id
 
-  cidr_ipv4   = "0.0.0.0/0"
-  ip_protocol = "-1" # semantically equivalent to all ports
+  description                  = "Forward to the app instances on port 3000"
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.sg_ec2.id
+  from_port                    = 3000
+  to_port                      = 3000
 }
 
 
@@ -41,16 +45,21 @@ resource "aws_vpc_security_group_ingress_rule" "ec2_from_alb_3000" {
   security_group_id            = aws_security_group.sg_ec2.id
   referenced_security_group_id = aws_security_group.sg_alb.id
 
+  description = "Inbound app traffic from the ALB on port 3000"
   ip_protocol = "tcp"
   from_port   = 3000
   to_port     = 3000
 }
 
+#trivy:ignore:AVD-AWS-0104 Outbound HTTPS to ECR/SSM/S3 via NAT
 resource "aws_vpc_security_group_egress_rule" "ec2_egress_all" {
   security_group_id = aws_security_group.sg_ec2.id
 
+  description = "Outbound HTTPS to ECR/SSM/S3 via NAT"
+  ip_protocol = "tcp"
   cidr_ipv4   = "0.0.0.0/0"
-  ip_protocol = "-1" # semantically equivalent to all ports
+  from_port   = 443
+  to_port     = 443
 }
 
 # SG RDS 
@@ -68,16 +77,10 @@ resource "aws_vpc_security_group_ingress_rule" "rds_from_ec2_5432" {
   security_group_id            = aws_security_group.sg_rds.id
   referenced_security_group_id = aws_security_group.sg_ec2.id
 
+  description = "Inbound PostgreSQL from the app instances"
   ip_protocol = "tcp"
   from_port   = 5432
   to_port     = 5432
-}
-
-resource "aws_vpc_security_group_egress_rule" "rds_egress_all" {
-  security_group_id = aws_security_group.sg_rds.id
-
-  cidr_ipv4   = "0.0.0.0/0"
-  ip_protocol = "-1" # semantically equivalent to all ports
 }
 
 # SG NAT
@@ -94,14 +97,16 @@ resource "aws_security_group" "sg_nat" {
 resource "aws_vpc_security_group_ingress_rule" "nat_from_vpc_all" {
   security_group_id = aws_security_group.sg_nat.id
 
+  description = "Inbound from the VPC to be forwarded out by the NAT instance"
   cidr_ipv4   = aws_vpc.main.cidr_block
   ip_protocol = "-1"
-
 }
 
+#trivy:ignore:AVD-AWS-0104 NAT must forward all VPC egress to the internet
 resource "aws_vpc_security_group_egress_rule" "nat_egress_all" {
   security_group_id = aws_security_group.sg_nat.id
 
+  description = "Outbound to the internet for NAT forwarding"
   cidr_ipv4   = "0.0.0.0/0"
   ip_protocol = "-1" # semantically equivalent to all ports
 }
