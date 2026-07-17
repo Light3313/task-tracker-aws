@@ -108,6 +108,12 @@ resource "aws_route" "public_rt_route" {
   gateway_id             = aws_internet_gateway.main.id
 }
 
+resource "aws_route" "private_rt_route" {
+  route_table_id = aws_route_table.private_rt.id
+
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = aws_network_interface.nat.id
+}
 
 # Flow Logs for main VPC
 resource "aws_flow_log" "main" {
