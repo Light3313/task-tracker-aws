@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@aws-sdk/client-ssm':
+        specifier: ^3.1088.0
+        version: 3.1088.0
       '@aws-sdk/rds-signer':
         specifier: ^3.1088.0
         version: 3.1088.0
@@ -53,6 +56,10 @@ importers:
         version: 5.9.3
 
 packages:
+
+  '@aws-sdk/client-ssm@3.1088.0':
+    resolution: {integrity: sha512-pGiDxOBGjUK+Sdl1M/+aCtp60YrS0mt1H1uoVC6cAWs2GR+BmWfBOpp5y6w6GnDOBoWVzemyAXunA3+y98joTw==}
+    engines: {node: '>=20.0.0'}
 
   '@aws-sdk/core@3.975.3':
     resolution: {integrity: sha512-7ur3kCKuvPLqlsZ2XlvnNBVQ7KkpSu6Y6dOTwSPHLrFpTEfZM8isLBJc4cgv96WB7GifeVM436mpycwxBd2vEA==}
@@ -596,6 +603,17 @@ packages:
     engines: {node: '>=0.4'}
 
 snapshots:
+
+  '@aws-sdk/client-ssm@3.1088.0':
+    dependencies:
+      '@aws-sdk/core': 3.975.3
+      '@aws-sdk/credential-provider-node': 3.972.69
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.4
+      '@smithy/fetch-http-handler': 5.6.6
+      '@smithy/node-http-handler': 4.9.6
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
 
   '@aws-sdk/core@3.975.3':
     dependencies:

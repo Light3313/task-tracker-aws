@@ -12,7 +12,7 @@ const nextConfig = {
   // as defense-in-depth: it removes the whole dynamic-require risk class, covers the
   // IMDS credential path that can't be exercised outside EC2, and matches how Next
   // already treats `pg`. The SDK is then traced into standalone/node_modules like any dep.
-  serverExternalPackages: ["@aws-sdk/rds-signer"],
+  serverExternalPackages: ["@aws-sdk/rds-signer", "@aws-sdk/client-ssm"],
 };
 
 module.exports = nextConfig;

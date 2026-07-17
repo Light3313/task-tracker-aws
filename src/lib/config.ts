@@ -35,9 +35,6 @@ export const config = {
   get awsRegion(): string {
     return required("AWS_REGION");
   },
-  get sessionSecret(): string {
-    return required("SESSION_SECRET");
-  },
   get port(): number {
     return parseInt(process.env.PORT ?? "3000", 10);
   },
