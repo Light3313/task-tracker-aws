@@ -80,7 +80,7 @@ resource "aws_instance" "app" {
   instance_type          = "t3.micro"
   vpc_security_group_ids = [aws_security_group.sg_ec2.id]
   subnet_id              = aws_subnet.private_1a.id
-  iam_instance_profile   = aws_iam_instance_profile.tt_app.name
+  iam_instance_profile   = aws_iam_instance_profile.app.name
 
   metadata_options {
     http_tokens                 = "required"
@@ -154,7 +154,7 @@ data "aws_iam_policy_document" "ec2_task_tracker_assume_role" {
   }
 }
 
-resource "aws_iam_instance_profile" "tt_app" {
+resource "aws_iam_instance_profile" "app" {
   name = "tt-app-profile"
   role = aws_iam_role.ec2_task_tracker.name
 }
@@ -241,4 +241,64 @@ resource "aws_iam_role_policy" "rds_connect_task_tracker" {
   name   = "rds-connect-task-tracker"
   role   = aws_iam_role.ec2_task_tracker.id
   policy = data.aws_iam_policy_document.rds_connect_task_tracker.json
+}
+
+# ALB
+#trivy:ignore:AVD-AWS-0053 Public-facing application ALB; internet exposure is intentional
+resource "aws_lb" "app" {
+  name               = "tt-app-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.sg_alb.id]
+  subnets            = [aws_subnet.public_1a.id, aws_subnet.public_1b.id]
+
+  drop_invalid_header_fields = true
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "tt-app-alb"
+  }
+}
+
+resource "aws_lb_target_group" "app" {
+  name     = "tt-app-tg"
+  port     = 3000
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    path                = "/api/healthz"
+    interval            = 10
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    matcher             = "200"
+  }
+
+  tags = {
+    Name = "tt-app-tg"
+  }
+}
+
+resource "aws_lb_target_group_attachment" "app" {
+  target_group_arn = aws_lb_target_group.app.arn
+  target_id        = aws_instance.app.id
+  port             = 3000
+}
+
+#trivy:ignore:AVD-AWS-0054 HTTP-only listener; TLS/HTTPS termination via ACM to be added
+resource "aws_lb_listener" "app" {
+  load_balancer_arn = aws_lb.app.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+}
+
+output "app_url" {
+  value       = aws_lb.app.dns_name
+  description = "The URL of the task tracker app"
 }

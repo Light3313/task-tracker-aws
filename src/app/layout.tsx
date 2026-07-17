@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export const metadata = {
   title: "Task Tracker",
-  description: "DevOps learning fixture",
+  description: "Task tracker application",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
