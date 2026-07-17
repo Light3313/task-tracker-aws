@@ -1,10 +1,8 @@
-# AMIs
-data "aws_ssm_parameter" "al2023_arm" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64"
-}
-
-data "aws_ssm_parameter" "al2023_x86_64" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+# AMIs pinned (not floating SSM "latest") so instances aren't replaced on every new AL2023 —
+# a NAT replacement resets its ENI source_dest_check and breaks forwarding. Bump deliberately.
+locals {
+  ami_al2023_arm    = "ami-02e447f4c654c7179" # AL2023 arm64  (NAT)
+  ami_al2023_x86_64 = "ami-0fd6240f599091088" # AL2023 x86_64 (app)
 }
 
 # NAT configuration
@@ -33,12 +31,19 @@ resource "aws_eip_association" "eip_assoc" {
 }
 
 resource "aws_instance" "nat" {
-  ami           = data.aws_ssm_parameter.al2023_arm.value
+  ami           = local.ami_al2023_arm
   instance_type = "t4g.micro"
   metadata_options { http_tokens = "required" }
 
   primary_network_interface {
     network_interface_id = aws_network_interface.nat.id
+  }
+
+  lifecycle {
+    # source_dest_check can't be set here (conflicts with primary_network_interface), yet the
+    # schema defaults it to true and would reset the ENI to true on every apply, killing NAT
+    # forwarding. Ignore it and let aws_network_interface.nat own source_dest_check = false.
+    ignore_changes = [source_dest_check]
   }
 
   user_data_replace_on_change = true
@@ -71,7 +76,7 @@ resource "aws_instance" "nat" {
 
 # App configuration
 resource "aws_instance" "app" {
-  ami                    = data.aws_ssm_parameter.al2023_x86_64.value
+  ami                    = local.ami_al2023_x86_64
   instance_type          = "t3.micro"
   vpc_security_group_ids = [aws_security_group.sg_ec2.id]
   subnet_id              = aws_subnet.private_1a.id
@@ -94,10 +99,9 @@ resource "aws_instance" "app" {
 
               REGION=us-east-1
 
-              # No DB password exists: the app connects with an IAM token it generates itself
-              # (@aws-sdk/rds-signer pulls the role's temporary creds from IMDS; hop_limit=2 lets the container reach it).
-              # From SSM we fetch only SESSION_SECRET — it is not DB-related.
-              SESSION_SECRET=$(aws ssm get-parameter --name /task-tracker/SESSION_SECRET --with-decryption --query Parameter.Value --output text --region "$REGION")
+              # No secrets are handled here. The app fetches them at runtime with the instance
+              # role: the DB IAM token via @aws-sdk/rds-signer, and SESSION_SECRET from SSM.
+              # Keeping them out of user_data keeps them out of the instance system log.
 
               # ECR login (token valid 12h); derive the registry host from the image URI itself
               APP_IMAGE="${var.app_image}"
@@ -128,7 +132,6 @@ resource "aws_instance" "app" {
                 -e PGUSER=taskuser \
                 -e PGDATABASE=tasktracker \
                 -e PGSSLMODE=require \
-                -e SESSION_SECRET="$SESSION_SECRET" \
                 "$APP_IMAGE"
               EOF
 

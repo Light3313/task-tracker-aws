@@ -62,6 +62,16 @@ resource "aws_vpc_security_group_egress_rule" "ec2_egress_all" {
   to_port     = 443
 }
 
+resource "aws_vpc_security_group_egress_rule" "ec2_to_rds_5432" {
+  security_group_id            = aws_security_group.sg_ec2.id
+  referenced_security_group_id = aws_security_group.sg_rds.id
+
+  description = "Outbound PostgreSQL to the RDS instance"
+  ip_protocol = "tcp"
+  from_port   = 5432
+  to_port     = 5432
+}
+
 # SG RDS 
 resource "aws_security_group" "sg_rds" {
   vpc_id = aws_vpc.main.id
