@@ -14,8 +14,26 @@ function required(name: string): string {
 }
 
 export const config = {
-  get databaseUrl(): string {
-    return required("DATABASE_URL");
+  // Present only in local/dev (docker-compose Postgres). When absent, db.ts switches
+  // to IAM database authentication using the discrete PG* fields below.
+  get databaseUrl(): string | undefined {
+    const value = process.env.DATABASE_URL;
+    return value && value.trim() !== "" ? value : undefined;
+  },
+  get pgHost(): string {
+    return required("PGHOST");
+  },
+  get pgPort(): number {
+    return parseInt(process.env.PGPORT ?? "5432", 10);
+  },
+  get pgUser(): string {
+    return required("PGUSER");
+  },
+  get pgDatabase(): string {
+    return required("PGDATABASE");
+  },
+  get awsRegion(): string {
+    return required("AWS_REGION");
   },
   get sessionSecret(): string {
     return required("SESSION_SECRET");
