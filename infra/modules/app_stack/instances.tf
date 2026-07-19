@@ -1,28 +1,17 @@
-# AMIs pinned (not floating SSM "latest") so instances aren't replaced on every new AL2023 —
-# a NAT replacement resets its ENI source_dest_check and breaks forwarding. Bump deliberately.
-locals {
-  ami_al2023_arm    = "ami-02e447f4c654c7179" # AL2023 arm64  (NAT)
-  ami_al2023_x86_64 = "ami-0fd6240f599091088" # AL2023 x86_64 (app)
-}
-
 # NAT configuration
 resource "aws_network_interface" "nat" {
   subnet_id         = aws_subnet.public_1a.id
   security_groups   = [aws_security_group.sg_nat.id]
   source_dest_check = false
 
-  tags = {
-    Name = "tt-nat"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-nat" })
 }
 
 resource "aws_eip" "nat" {
   domain     = "vpc"
   depends_on = [aws_internet_gateway.main]
 
-  tags = {
-    Name = "tt-nat-eip"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-nat-eip" })
 }
 
 resource "aws_eip_association" "eip_assoc" {
@@ -37,6 +26,10 @@ resource "aws_instance" "nat" {
 
   primary_network_interface {
     network_interface_id = aws_network_interface.nat.id
+  }
+
+  root_block_device {
+    encrypted = true
   }
 
   lifecycle {
@@ -69,15 +62,13 @@ resource "aws_instance" "nat" {
               service iptables save
               EOF
 
-  tags = {
-    Name = "tt-nat"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-nat" })
 }
 
 # App configuration
 resource "aws_instance" "app" {
   ami                    = local.ami_al2023_x86_64
-  instance_type          = "t3.micro"
+  instance_type          = var.app_instance_type
   vpc_security_group_ids = [aws_security_group.sg_ec2.id]
   subnet_id              = aws_subnet.private_1a.id
   iam_instance_profile   = aws_iam_instance_profile.app.name
@@ -85,6 +76,10 @@ resource "aws_instance" "app" {
   metadata_options {
     http_tokens                 = "required"
     http_put_response_hop_limit = 2
+  }
+
+  root_block_device {
+    encrypted = true
   }
 
   user_data_replace_on_change = true
@@ -135,9 +130,7 @@ resource "aws_instance" "app" {
                 "$APP_IMAGE"
               EOF
 
-  tags = {
-    Name = "tt-app"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-app" })
 }
 
 
@@ -155,12 +148,12 @@ data "aws_iam_policy_document" "ec2_task_tracker_assume_role" {
 }
 
 resource "aws_iam_instance_profile" "app" {
-  name = "tt-app-profile"
+  name = "${local.name}-app-profile"
   role = aws_iam_role.ec2_task_tracker.name
 }
 
 resource "aws_iam_role" "ec2_task_tracker" {
-  name               = "tt-ec2-task-tracker"
+  name               = "${local.name}-task-tracker"
   assume_role_policy = data.aws_iam_policy_document.ec2_task_tracker_assume_role.json
 }
 
@@ -217,13 +210,13 @@ data "aws_iam_policy_document" "ecr_pull_task_tracker" {
 }
 
 resource "aws_iam_role_policy" "ssm_read_task_tracker" {
-  name   = "ssm-read-task-tracker"
+  name   = "${local.name}-ssm-read"
   role   = aws_iam_role.ec2_task_tracker.id
   policy = data.aws_iam_policy_document.ssm_read_task_tracker.json
 }
 
 resource "aws_iam_role_policy" "ecr_pull_task_tracker" {
-  name   = "ecr-pull-task-tracker"
+  name   = "${local.name}-ecr-pull"
   role   = aws_iam_role.ec2_task_tracker.id
   policy = data.aws_iam_policy_document.ecr_pull_task_tracker.json
 }
@@ -238,7 +231,7 @@ data "aws_iam_policy_document" "rds_connect_task_tracker" {
 }
 
 resource "aws_iam_role_policy" "rds_connect_task_tracker" {
-  name   = "rds-connect-task-tracker"
+  name   = "${local.name}-rds-connect"
   role   = aws_iam_role.ec2_task_tracker.id
   policy = data.aws_iam_policy_document.rds_connect_task_tracker.json
 }
@@ -246,7 +239,7 @@ resource "aws_iam_role_policy" "rds_connect_task_tracker" {
 # ALB
 #trivy:ignore:AVD-AWS-0053 Public-facing application ALB; internet exposure is intentional
 resource "aws_lb" "app" {
-  name               = "tt-app-alb"
+  name               = "${local.name}-app-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.sg_alb.id]
@@ -255,13 +248,11 @@ resource "aws_lb" "app" {
   drop_invalid_header_fields = true
   enable_deletion_protection = false
 
-  tags = {
-    Name = "tt-app-alb"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-app-alb" })
 }
 
 resource "aws_lb_target_group" "app" {
-  name     = "tt-app-tg"
+  name     = "${local.name}-app-tg"
   port     = 3000
   protocol = "HTTP"
   vpc_id   = aws_vpc.main.id
@@ -275,9 +266,7 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200"
   }
 
-  tags = {
-    Name = "tt-app-tg"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-app-tg" })
 }
 
 resource "aws_lb_target_group_attachment" "app" {
@@ -298,7 +287,3 @@ resource "aws_lb_listener" "app" {
   }
 }
 
-output "app_url" {
-  value       = aws_lb.app.dns_name
-  description = "The URL of the task tracker app"
-}

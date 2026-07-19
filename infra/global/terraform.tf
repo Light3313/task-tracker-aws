@@ -10,18 +10,19 @@ terraform {
 
   backend "s3" {
     bucket       = "tt-tfstate-486949319589"
-    key          = "task-tracker/terraform.tfstate"
+    key          = "task-tracker/global/terraform.tfstate"
     region       = "us-east-1"
     use_lockfile = true
     encrypt      = true
-
-    assume_role = {
-      role_arn     = "arn:aws:iam::486949319589:role/tt-terraform-deployer"
-      session_name = "terraform-local"
-    }
   }
 }
 
-resource "aws_ebs_encryption_by_default" "enabled" {
-  enabled = true
+provider "aws" {
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      ManagedBy = "terraform"
+    }
+  }
 }

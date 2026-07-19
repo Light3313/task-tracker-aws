@@ -4,9 +4,7 @@ resource "aws_security_group" "sg_alb" {
 
   description = "Allow inbound 80 from all IPv4"
 
-  tags = {
-    Name = "sg-alb"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-sg-alb" })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_from_internet_80" {
@@ -29,16 +27,14 @@ resource "aws_vpc_security_group_egress_rule" "alb_egress_all" {
   to_port                      = 3000
 }
 
-
 # SG EC2 
 resource "aws_security_group" "sg_ec2" {
   vpc_id = aws_vpc.main.id
 
   description = "Allow inbound 3000 from sg_alb"
 
-  tags = {
-    Name = "sg-ec2"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-sg-ec2" })
+
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ec2_from_alb_3000" {
@@ -78,9 +74,7 @@ resource "aws_security_group" "sg_rds" {
 
   description = "Allow inbound 5432 from sg_ec2"
 
-  tags = {
-    Name = "sg-rds"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-sg-rds" })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "rds_from_ec2_5432" {
@@ -99,9 +93,7 @@ resource "aws_security_group" "sg_nat" {
 
   description = "Allow all inbound from VPC network"
 
-  tags = {
-    Name = "sg-nat"
-  }
+  tags = merge(local.tags, { Name = "${local.name}-sg-nat" })
 }
 
 resource "aws_vpc_security_group_ingress_rule" "nat_from_vpc_all" {
