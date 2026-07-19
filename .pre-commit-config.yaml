@@ -1,0 +1,25 @@
+# Local hooks — use the already-installed terraform/trivy binaries, no remote pulls.
+# Runs only when a staged infra/*.tf file changes.
+repos:
+  - repo: local
+    hooks:
+      - id: terraform-fmt
+        name: terraform fmt (check)
+        entry: bash -c 'cd infra && terraform fmt -check -recursive'
+        language: system
+        pass_filenames: false
+        files: ^infra/.*\.tf$
+
+      - id: terraform-validate
+        name: terraform validate
+        entry: bash -c 'cd infra && terraform validate'
+        language: system
+        pass_filenames: false
+        files: ^infra/.*\.tf$
+
+      - id: trivy-config
+        name: trivy config (IaC misconfig scan)
+        entry: bash -c 'trivy config infra/ --exit-code 1 --severity HIGH,CRITICAL'
+        language: system
+        pass_filenames: false
+        files: ^infra/.*\.tf$
