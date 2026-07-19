@@ -6,4 +6,9 @@ provider "aws" {
       ManagedBy = "terraform"
     }
   }
+
+  assume_role {
+    role_arn     = "arn:aws:iam::486949319589:role/tt-terraform-deployer"
+    session_name = "terraform-local"
+  }
 }
