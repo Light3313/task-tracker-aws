@@ -25,9 +25,9 @@ resource "aws_db_instance" "main" {
   db_subnet_group_name                = aws_db_subnet_group.main.name
   vpc_security_group_ids              = [aws_security_group.sg_rds.id]
 
-  db_name  = "tasktracker"
-  username = "postgres"
-  password = var.db_master_password
+  db_name                     = "tasktracker"
+  username                    = "postgres"
+  manage_master_user_password = true # AWS Secrets Manager for the master password, so let AWS manage it
 
   # money saver (lab case)
   skip_final_snapshot = true
