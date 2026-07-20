@@ -1,6 +1,6 @@
 # NAT configuration
 resource "aws_network_interface" "nat" {
-  subnet_id         = aws_subnet.public_1a.id
+  subnet_id         = aws_subnet.this["public_1a"].id
   security_groups   = [aws_security_group.sg_nat.id]
   source_dest_check = false
 
@@ -70,7 +70,7 @@ resource "aws_instance" "app" {
   ami                    = local.ami_al2023_x86_64
   instance_type          = var.app_instance_type
   vpc_security_group_ids = [aws_security_group.sg_ec2.id]
-  subnet_id              = aws_subnet.private_1a.id
+  subnet_id              = aws_subnet.this["private_1a"].id
   iam_instance_profile   = aws_iam_instance_profile.app.name
 
   metadata_options {
@@ -243,7 +243,7 @@ resource "aws_lb" "app" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.sg_alb.id]
-  subnets            = [aws_subnet.public_1a.id, aws_subnet.public_1b.id]
+  subnets            = [aws_subnet.this["public_1a"].id, aws_subnet.this["public_1b"].id]
 
   drop_invalid_header_fields = true
   enable_deletion_protection = false

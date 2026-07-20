@@ -7,61 +7,23 @@ resource "aws_vpc" "main" {
 }
 
 # AWS Subnets
-resource "aws_subnet" "public_1a" {
+resource "aws_subnet" "this" {
+  for_each = local.subnets
+
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(aws_vpc.main.cidr_block, 8, 1)
-  availability_zone       = "us-east-1a"
+  cidr_block              = cidrsubnet(aws_vpc.main.cidr_block, 8, each.value.netnum)
+  availability_zone       = each.value.az
   map_public_ip_on_launch = false
 
-  tags = merge(local.tags, { Name = "${local.name}-public-1a" })
-}
-
-resource "aws_subnet" "public_1b" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(aws_vpc.main.cidr_block, 8, 2)
-  availability_zone       = "us-east-1b"
-  map_public_ip_on_launch = false
-
-  tags = merge(local.tags, { Name = "${local.name}-public-1b" })
-}
-
-resource "aws_subnet" "private_1a" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(aws_vpc.main.cidr_block, 8, 3)
-  availability_zone       = "us-east-1a"
-  map_public_ip_on_launch = false
-
-  tags = merge(local.tags, { Name = "${local.name}-private-1a" })
-}
-
-resource "aws_subnet" "private_1b" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(aws_vpc.main.cidr_block, 8, 4)
-  availability_zone       = "us-east-1b"
-  map_public_ip_on_launch = false
-
-  tags = merge(local.tags, { Name = "${local.name}-private-1b" })
+  tags = merge(local.tags, { Name = "${local.name}-${each.key}" })
 }
 
 # Route Associations
-resource "aws_route_table_association" "public_1a_public_rt" {
-  route_table_id = aws_route_table.public_rt.id
-  subnet_id      = aws_subnet.public_1a.id
-}
+resource "aws_route_table_association" "this" {
+  for_each = local.subnets
 
-resource "aws_route_table_association" "public_1b_public_rt" {
-  subnet_id      = aws_subnet.public_1b.id
-  route_table_id = aws_route_table.public_rt.id
-}
-
-resource "aws_route_table_association" "private_1a_private_rt" {
-  subnet_id      = aws_subnet.private_1a.id
-  route_table_id = aws_route_table.private_rt.id
-}
-
-resource "aws_route_table_association" "private_1b_private_rt" {
-  subnet_id      = aws_subnet.private_1b.id
-  route_table_id = aws_route_table.private_rt.id
+  subnet_id      = aws_subnet.this[each.key].id
+  route_table_id = each.value.tier == "public" ? aws_route_table.public_rt.id : aws_route_table.private_rt.id
 }
 
 # IGW
