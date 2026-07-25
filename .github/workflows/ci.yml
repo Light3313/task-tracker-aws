@@ -28,7 +28,7 @@ jobs:
       - name: Run linter
         run: pnpm lint
 
-  security:
+  image-scan:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,10 +54,19 @@ jobs:
 
       - name: Upload image scan results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
+
+  config-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Scan Terraform for misconfigurations (Trivy)
         uses: aquasecurity/trivy-action@v0.36.0
@@ -71,7 +80,7 @@ jobs:
 
       - name: Upload Terraform scan results
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
