@@ -2,6 +2,7 @@
   "name": "task-tracker",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.8.0",
   "pnpm": {
     "overrides": {
       "undici": ">=6.27.0"
