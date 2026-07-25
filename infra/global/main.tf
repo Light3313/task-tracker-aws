@@ -44,10 +44,11 @@ data "aws_iam_policy_document" "deployer_policy" {
       "elasticloadbalancing:*", # ALB, target group, listener, attachment
       "rds:*",                  # DB instance + subnet group
       "iam:*",                  # app role/instance-profile/policies (+ this deployer role itself)
-      "kms:*",                  # storage encryption keys (RDS/EBS default + CMK in W6)
+      "kms:*",                  # storage encryption keys (RDS/EBS default + customer-managed CMK)
       "logs:*",                 # CloudWatch Logs group for VPC flow logs
       "ssm:*",                  # /task-tracker/* parameters + SSM-managed instances + public AMI params
-      "secretsmanager:*",       # RDS master password via managed secret (W6)
+      "secretsmanager:*",       # RDS master password via managed secret
+      "ecr:*",                  # ECR repository for Docker image
     ]
     resources = ["*"]
   }
@@ -89,4 +90,38 @@ resource "aws_iam_openid_connect_provider" "github" {
 # resource explicitly opts out. Backstop under the per-volume encrypted = true.
 resource "aws_ebs_encryption_by_default" "enabled" {
   enabled = true
+}
+
+#trivy:ignore:AVD-AWS-0033 Default encryption is sufficient
+resource "aws_ecr_repository" "task_tracker" {
+  name                 = "task-tracker"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "task_tracker" {
+  repository = aws_ecr_repository.task_tracker.name
+
+  # Keep last 10 images
+  policy = <<POLICY
+  {
+    "rules": [
+      {
+        "rulePriority": 1,
+        "description": "Keep last 10 images",
+        "selection": {
+          "tagStatus": "any",
+          "countType": "imageCountMoreThan",
+          "countNumber": 10
+        },
+        "action": {
+          "type": "expire"
+        }
+      }
+    ]
+  }
+POLICY
 }
