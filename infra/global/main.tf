@@ -9,6 +9,28 @@ data "aws_iam_policy_document" "deployer_trust" {
       identifiers = ["arn:aws:iam::486949319589:user/Light-admin"]
     }
   }
+
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:Light3313/task-tracker-aws:ref:refs/heads/main"]
+    }
+  }
 }
 
 data "aws_iam_policy_document" "deployer_policy" {
@@ -56,4 +78,15 @@ resource "aws_iam_role_policy" "deployer_policy" {
   name   = "tt-terraform-deployer-policy"
   role   = aws_iam_role.terraform_deployer.id
   policy = data.aws_iam_policy_document.deployer_policy.json
+}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+# Account-wide, region-level default: new EBS volumes are encrypted unless a
+# resource explicitly opts out. Backstop under the per-volume encrypted = true.
+resource "aws_ebs_encryption_by_default" "enabled" {
+  enabled = true
 }
