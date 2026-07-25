@@ -8,5 +8,5 @@ module "app_stack" {
   db_allocated_storage   = 40
   db_snapshot_identifier = null
   app_instance_type      = "t3.small"
-  app_image              = "486949319589.dkr.ecr.us-east-1.amazonaws.com/task-tracker:iam-auth"
+  app_image              = var.app_image
 }

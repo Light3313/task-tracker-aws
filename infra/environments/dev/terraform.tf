@@ -14,21 +14,11 @@ terraform {
     region       = "us-east-1"
     use_lockfile = true
     encrypt      = true
-
-    assume_role = {
-      role_arn     = "arn:aws:iam::486949319589:role/tt-terraform-deployer"
-      session_name = "terraform-local-dev"
-    }
   }
 }
 
 provider "aws" {
   region = "us-east-1"
-
-  assume_role {
-    role_arn     = "arn:aws:iam::486949319589:role/tt-terraform-deployer"
-    session_name = "terraform-local"
-  }
 
   default_tags {
     tags = {
