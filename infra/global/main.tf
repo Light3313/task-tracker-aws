@@ -28,7 +28,7 @@ data "aws_iam_policy_document" "deployer_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:Light3313/task-tracker-aws:ref:refs/heads/main"]
+      values   = ["repo:Light3313@202292607/task-tracker-aws@1301640311:ref:refs/heads/main"]
     }
   }
 }
