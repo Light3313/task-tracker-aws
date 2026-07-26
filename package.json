@@ -14,7 +14,7 @@
     "@aws-sdk/client-ssm": "^3.1088.0",
     "@aws-sdk/rds-signer": "^3.1088.0",
     "bcryptjs": "^2.4.3",
-    "next": "^15.1.0",
+    "next": "^15.5.21",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
     "prom-client": "^15.1.3",
