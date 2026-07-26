@@ -1,2 +1,6 @@
 allowBuilds:
   sharp: true
+  unrs-resolver: false
+overrides:
+  undici: '>=6.27.0'
+  postcss: '>=8.5.18'
