@@ -49,6 +49,8 @@ data "aws_iam_policy_document" "deployer_policy" {
       "ssm:*",                  # /task-tracker/* parameters + SSM-managed instances + public AMI params
       "secretsmanager:*",       # RDS master password via managed secret
       "ecr:*",                  # ECR repository for Docker image
+      "acm:*",                  # ACM certificate for ALB HTTPS listener
+      "route53:*",              # Route 53 hosted zone
     ]
     resources = ["*"]
   }
@@ -124,4 +126,71 @@ resource "aws_ecr_lifecycle_policy" "task_tracker" {
     ]
   }
 POLICY
+}
+
+resource "aws_route53_zone" "main" {
+  name = "kukharets.dev"
+}
+
+resource "aws_acm_certificate" "main" {
+  domain_name               = "kukharets.dev"
+  subject_alternative_names = ["www.kukharets.dev"]
+  validation_method         = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_acm_certificate" "app" {
+  domain_name       = "app.kukharets.dev"
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "main_cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = aws_route53_zone.main.zone_id
+}
+
+resource "aws_route53_record" "app_cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.app.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = aws_route53_zone.main.zone_id
+}
+
+resource "aws_acm_certificate_validation" "main" {
+  certificate_arn         = aws_acm_certificate.main.arn
+  validation_record_fqdns = [for record in aws_route53_record.main_cert_validation : record.fqdn]
+}
+
+resource "aws_acm_certificate_validation" "app" {
+  certificate_arn         = aws_acm_certificate.app.arn
+  validation_record_fqdns = [for record in aws_route53_record.app_cert_validation : record.fqdn]
 }
