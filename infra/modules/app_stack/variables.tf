@@ -8,6 +8,16 @@ variable "vpc_cidr" {
   type        = string
 }
 
+variable "app_domain_name" {
+  description = "Domain name for the app (example: 'app.example.com')"
+  type        = string
+}
+
+variable "main_domain_name" {
+  description = "Domain name for the Route53 zone (example: 'example.com')"
+  type        = string
+}
+
 variable "db_instance_class" {
   description = "RDS instance type for the service DB (example: 'db.t4g.micro')"
   type        = string

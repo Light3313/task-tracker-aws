@@ -19,3 +19,26 @@ locals {
     private_1b = { az = "us-east-1b", netnum = 4, tier = "private" }
   }
 }
+
+resource "aws_route53_record" "app" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = var.app_domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.app.dns_name
+    zone_id                = aws_lb.app.zone_id
+    evaluate_target_health = true
+  }
+}
+
+data "aws_acm_certificate" "alb_cert" {
+  domain      = var.app_domain_name
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
+data "aws_route53_zone" "main" {
+  name         = var.main_domain_name
+  private_zone = false
+}

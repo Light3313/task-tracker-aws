@@ -17,6 +17,16 @@ resource "aws_vpc_security_group_ingress_rule" "alb_from_internet_80" {
   to_port     = 80
 }
 
+resource "aws_vpc_security_group_ingress_rule" "alb_from_internet_443" {
+  security_group_id = aws_security_group.sg_alb.id
+
+  description = "Inbound HTTPS from the internet to the ALB"
+  cidr_ipv4   = "0.0.0.0/0"
+  ip_protocol = "tcp"
+  from_port   = 443
+  to_port     = 443
+}
+
 resource "aws_vpc_security_group_egress_rule" "alb_egress_all" {
   security_group_id = aws_security_group.sg_alb.id
 
