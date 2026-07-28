@@ -84,3 +84,71 @@ jobs:
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
+
+  terraform-plan:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: arn:aws:iam::486949319589:role/tt-terraform-planner
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.15.7
+        
+      - name: Terraform Init
+        working-directory: infra/environments/dev
+        run: terraform init -input=false
+
+      - name: Get Terraform app_image
+        working-directory: infra/environments/dev
+        run: | 
+          IMAGE=$(terraform output -json | jq -r '.app_image.value // "none"')
+          printf 'IMAGE=%s\n' "$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Terraform plan
+        working-directory: infra/environments/dev
+        id: plan
+        continue-on-error: true
+        run: terraform plan -var "app_image=$IMAGE" -input=false -no-color -lock=false
+
+      - name: Report Terraform plan
+        working-directory: infra/environments/dev
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+          ERR: ${{ steps.plan.outputs.stderr }}
+          CODE: ${{ steps.plan.outputs.exitcode }}
+        run: |
+          {
+            echo "### Terraform plan (exit ${CODE:-unknown})"
+            echo ""
+            if [ -n "$ERR" ]; then
+              echo "**stderr**"
+              echo ""
+              echo '```'
+              echo "$ERR"
+              echo '```'
+              echo ""
+            fi
+            echo '<details><summary>Show plan</summary>'
+            echo ""
+            echo '```terraform'
+            echo "$PLAN"
+            echo '```'
+            echo ""
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
