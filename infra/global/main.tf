@@ -83,6 +83,87 @@ resource "aws_iam_role_policy" "deployer_policy" {
   policy = data.aws_iam_policy_document.deployer_policy.json
 }
 
+# IAM deployment read-only role
+data "aws_iam_policy_document" "planner_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:Light3313@202292607/task-tracker-aws@1301640311:pull_request"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "planner_policy" {
+  # Refreshing state calls Describe/Get/List once per resource, across every
+  # service the stack declares. Read-only by construction: this identity is
+  # assumed from pull requests, i.e. from code that has not been reviewed yet,
+  # so it must not be able to change anything.
+  statement {
+    sid    = "ReadStackResources"
+    effect = "Allow"
+    actions = [
+      "ec2:Describe*",                  # VPC, subnets, IGW, route tables, SGs, ENIs, EIPs, instances, flow logs
+      "elasticloadbalancing:Describe*", # load balancer, target group, listeners, target health
+      "rds:Describe*",                  # DB instance and subnet group
+      "rds:ListTagsForResource",        # RDS tags are served by their own API, not by Describe*
+      "iam:Get*",                       # roles, inline policies, instance profile
+      "iam:List*",
+      "kms:Describe*", # storage encryption key and its alias
+      "kms:Get*",
+      "kms:List*",
+      "logs:Describe*",           # flow-log group
+      "logs:ListTagsForResource", # log group tags, likewise a separate API
+      "acm:Describe*",            # certificate resolved for the HTTPS listener
+      "acm:List*",
+      "route53:Get*", # hosted zone and the alias record
+      "route53:List*",
+    ]
+    resources = ["*"] # Describe/List actions are account-wide by design and take no resource constraint
+  }
+
+  # Remote state: read only. The plan runs with -lock=false, so no write access
+  # is required, and this identity is never able to overwrite the state file.
+  statement {
+    sid    = "TerraformStateBackendRead"
+    effect = "Allow"
+    actions = [
+      "s3:ListBucket",
+      "s3:GetObject",
+    ]
+    resources = [
+      "arn:aws:s3:::tt-tfstate-486949319589",
+      "arn:aws:s3:::tt-tfstate-486949319589/*",
+    ]
+  }
+}
+
+resource "aws_iam_role" "terraform_planner" {
+  name               = "tt-terraform-planner"
+  assume_role_policy = data.aws_iam_policy_document.planner_trust.json
+}
+
+resource "aws_iam_role_policy" "planner_policy" {
+  name   = "tt-terraform-planner-policy"
+  role   = aws_iam_role.terraform_planner.id
+  policy = data.aws_iam_policy_document.planner_policy.json
+}
+
+# Connect github iam openid provider
 resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
