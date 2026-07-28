@@ -109,10 +109,7 @@ data "aws_iam_policy_document" "planner_trust" {
 }
 
 data "aws_iam_policy_document" "planner_policy" {
-  # Refreshing state calls Describe/Get/List once per resource, across every
-  # service the stack declares. Read-only by construction: this identity is
-  # assumed from pull requests, i.e. from code that has not been reviewed yet,
-  # so it must not be able to change anything.
+  # Assumed from pull requests, i.e. unreviewed code — read-only, no exceptions.
   statement {
     sid    = "ReadStackResources"
     effect = "Allow"
@@ -130,15 +127,14 @@ data "aws_iam_policy_document" "planner_policy" {
       "logs:ListTagsForResource", # log group tags, likewise a separate API
       "acm:Describe*",            # certificate resolved for the HTTPS listener
       "acm:List*",
-      "acm:Get*",     # the certificate data source also fetches the public cert and chain; the private key needs acm:ExportCertificate, which is not granted
+      "acm:Get*",     # public cert body; the private key needs acm:ExportCertificate, not granted
       "route53:Get*", # hosted zone and the alias record
       "route53:List*",
     ]
-    resources = ["*"] # Describe/List actions are account-wide by design and take no resource constraint
+    resources = ["*"] # Describe/List take no resource constraint
   }
 
-  # Remote state: read only. The plan runs with -lock=false, so no write access
-  # is required, and this identity is never able to overwrite the state file.
+  # Read-only: plan runs with -lock=false, so it never writes the state file.
   statement {
     sid    = "TerraformStateBackendRead"
     effect = "Allow"
@@ -275,4 +271,36 @@ resource "aws_acm_certificate_validation" "main" {
 resource "aws_acm_certificate_validation" "app" {
   certificate_arn         = aws_acm_certificate.app.arn
   validation_record_fqdns = [for record in aws_route53_record.app_cert_validation : record.fqdn]
+}
+
+# Kept out of the env stack — a key destroyed with it strands its snapshots.
+data "aws_iam_policy_document" "rds_kms" {
+  statement {
+    sid       = "EnableRootAccountAdmin"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::486949319589:root"]
+    }
+  }
+}
+
+resource "aws_kms_key" "rds_dev" {
+  description             = "CMK for tt-dev RDS storage encryption"
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+  policy                  = data.aws_iam_policy_document.rds_kms.json
+
+  tags = {
+    Name        = "tt-dev-rds-kms"
+    Project     = "task-tracker"
+    Environment = "dev"
+  }
+}
+
+resource "aws_kms_alias" "rds_dev" {
+  name          = "alias/tt-dev-rds"
+  target_key_id = aws_kms_key.rds_dev.key_id
 }
