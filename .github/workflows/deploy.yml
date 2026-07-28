@@ -17,17 +17,12 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.login-ecr.outputs.registry }}/task-tracker
-    env:
-      ECR_REPOSITORY: task-tracker
+      image: ${{ steps.login-ecr.outputs.registry }}/task-tracker@${{ steps.build.outputs.digest }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Build Docker image
-        run: ./scripts/build.sh ${{ github.sha }}
-    
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
@@ -38,10 +33,23 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
 
-      - name: Push Docker image to ECR
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build and push image to ECR
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: ./scripts/push.sh ${{ github.sha }}
+          # Pinned so the image config is byte-identical when the inputs are:
+          # a drifting timestamp alone would change the digest.
+          SOURCE_DATE_EPOCH: 0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/task-tracker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
 
   deploy:
     needs: build-and-push
@@ -65,7 +73,7 @@ jobs:
         working-directory: infra/environments/dev
         run: |
           terraform init
-          terraform apply -auto-approve -var "app_image=${{ needs.build-and-push.outputs.image }}:${{ github.sha }}"
+          terraform apply -auto-approve -var "app_image=${{ needs.build-and-push.outputs.image }}"
 
       - name: Report deployed URL
         working-directory: infra/environments/dev
@@ -74,5 +82,5 @@ jobs:
             echo "### Deployed to dev"
             echo ""
             echo "- App: https://$(terraform output -raw app_url)"
-            echo "- Image tag: \`${{ github.sha }}\`"
+            echo "- Image: \`${{ needs.build-and-push.outputs.image }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
