@@ -108,14 +108,13 @@ jobs:
         
       - name: Terraform Init
         working-directory: infra/environments/dev
-        id: init
         run: terraform init -input=false
 
       - name: Get Terraform app_image
         working-directory: infra/environments/dev
         run: | 
-          IMAGE=$(terraform output -raw app_image 2>/dev/null || echo "none")
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          IMAGE=$(terraform output -json | jq -r '.app_image.value // "none"')
+          printf 'IMAGE=%s\n' "$IMAGE" >> "$GITHUB_ENV"
 
       - name: Terraform plan
         working-directory: infra/environments/dev
@@ -123,9 +122,11 @@ jobs:
         run: terraform plan -var "app_image=$IMAGE" -input=false -no-color -lock=false
 
       - name: Report Terraform plan
+        if: always()
         working-directory: infra/environments/dev
         env:  
           PLAN: ${{ steps.plan.outputs.stdout }}
+          ERR: ${{ steps.plan.outputs.stderr }}
         run: |
           {
             echo "### Terraform plan"
@@ -137,4 +138,13 @@ jobs:
             echo '```'
             echo ""
             echo '</details>'
+
+            if [ -n "$ERR" ]; then
+              echo ""
+              echo "**Warnings / errors**"
+              echo ""
+              echo '```'
+              echo "$ERR"
+              echo '```'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
