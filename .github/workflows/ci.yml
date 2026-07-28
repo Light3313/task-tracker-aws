@@ -119,18 +119,27 @@ jobs:
       - name: Terraform plan
         working-directory: infra/environments/dev
         id: plan
+        continue-on-error: true
         run: terraform plan -var "app_image=$IMAGE" -input=false -no-color -lock=false
 
       - name: Report Terraform plan
-        if: always()
         working-directory: infra/environments/dev
-        env:  
+        env:
           PLAN: ${{ steps.plan.outputs.stdout }}
           ERR: ${{ steps.plan.outputs.stderr }}
+          CODE: ${{ steps.plan.outputs.exitcode }}
         run: |
           {
-            echo "### Terraform plan"
+            echo "### Terraform plan (exit ${CODE:-unknown})"
             echo ""
+            if [ -n "$ERR" ]; then
+              echo "**stderr**"
+              echo ""
+              echo '```'
+              echo "$ERR"
+              echo '```'
+              echo ""
+            fi
             echo '<details><summary>Show plan</summary>'
             echo ""
             echo '```terraform'
@@ -138,13 +147,8 @@ jobs:
             echo '```'
             echo ""
             echo '</details>'
-
-            if [ -n "$ERR" ]; then
-              echo ""
-              echo "**Warnings / errors**"
-              echo ""
-              echo '```'
-              echo "$ERR"
-              echo '```'
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
