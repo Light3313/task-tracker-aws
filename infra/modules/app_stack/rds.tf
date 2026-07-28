@@ -23,7 +23,7 @@ resource "aws_db_instance" "main" {
   performance_insights_enabled        = true
   db_subnet_group_name                = aws_db_subnet_group.main.name
   vpc_security_group_ids              = [aws_security_group.sg_rds.id]
-  kms_key_id                          = aws_kms_key.rds.arn
+  kms_key_id                          = data.aws_kms_key.rds.arn
 
   db_name                     = var.db_snapshot_identifier == null ? "tasktracker" : null
   username                    = var.db_snapshot_identifier == null ? "postgres" : null
@@ -35,29 +35,6 @@ resource "aws_db_instance" "main" {
 }
 
 # CMK 
-data "aws_iam_policy_document" "rds_kms" {
-  statement {
-    sid       = "EnableRootAccountAdmin"
-    effect    = "Allow"
-    actions   = ["kms:*"]
-    resources = ["*"]
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::486949319589:root"]
-    }
-  }
-}
-
-resource "aws_kms_key" "rds" {
-  description             = "CMK for ${local.name} RDS storage encryption"
-  enable_key_rotation     = true
-  deletion_window_in_days = 7
-  policy                  = data.aws_iam_policy_document.rds_kms.json
-
-  tags = merge(local.tags, { Name = "${local.name}-rds-kms" })
-}
-
-resource "aws_kms_alias" "rds" {
-  name          = "alias/${local.name}-rds"
-  target_key_id = aws_kms_key.rds.key_id
+data "aws_kms_key" "rds" {
+  key_id = "alias/${local.name}-rds"
 }
