@@ -130,6 +130,7 @@ data "aws_iam_policy_document" "planner_policy" {
       "logs:ListTagsForResource", # log group tags, likewise a separate API
       "acm:Describe*",            # certificate resolved for the HTTPS listener
       "acm:List*",
+      "acm:Get*",     # the certificate data source also fetches the public cert and chain; the private key needs acm:ExportCertificate, which is not granted
       "route53:Get*", # hosted zone and the alias record
       "route53:List*",
     ]
