@@ -70,6 +70,21 @@ docs/
 .circleci/
 Jenkinsfile
 
+# Infrastructure definitions (not built here; in the context they bust the COPY . . cache)
+infra/
+
+# Schema and migrations (applied from outside, never from the image)
+db/
+scripts/
+
+# Reverse proxy for the Compose stack (unused by this image)
+nginx.conf
+
+# Repo metadata (tooling around the repo, not the build)
+LICENSE
+.trivyignore
+.pre-commit-config.yaml
+
 # Cache directories and temporary data
 .cache/
 .parcel-cache/
