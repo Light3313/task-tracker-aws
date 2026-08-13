@@ -74,10 +74,6 @@ resource "aws_ecs_task_definition" "tt_task" {
     cpu_architecture        = "X86_64"
   }
 
-  lifecycle {
-    ignore_changes = [desired_count]
-  }
-
   container_definitions = jsonencode([
     { name      = "task-tracker"
       image     = var.app_image
@@ -88,6 +84,7 @@ resource "aws_ecs_task_definition" "tt_task" {
       ]
 
       environment = [
+        { name = "HOSTNAME", value = "0.0.0.0" },
         { name = "PORT", value = "3000" },
         { name = "AWS_REGION", value = data.aws_region.current.region },
         { name = "PGHOST", value = aws_db_instance.main.address },
@@ -118,4 +115,106 @@ resource "aws_ecs_task_definition" "tt_task" {
   ])
 
   tags = merge(local.tags, { Name = "${local.name}-app" })
+}
+
+resource "aws_lb_target_group" "app_ecs" {
+  name        = "${local.name}-app-ecs-tg"
+  port        = 3000
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  deregistration_delay = 30
+
+  health_check {
+    path                = "/api/healthz"
+    interval            = 10
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    matcher             = "200"
+  }
+
+  tags = merge(local.tags, { Name = "${local.name}-app-ecs-tg" })
+}
+
+resource "aws_lb_listener_rule" "ecs_canary" {
+  listener_arn = aws_lb_listener.app_https.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_ecs.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-Canary"
+      values           = ["ecs"]
+    }
+  }
+
+  tags = merge(local.tags, { Name = "${local.name}-ecs-canary" })
+}
+
+resource "aws_ecs_service" "app" {
+  name            = "${local.name}-app"
+  cluster         = aws_ecs_cluster.tt_ecs.id
+  task_definition = aws_ecs_task_definition.tt_task.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets = [
+      aws_subnet.this["private_1a"].id,
+      aws_subnet.this["private_1b"].id,
+    ]
+    security_groups  = [aws_security_group.sg_ec2.id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.app_ecs.arn
+    container_name   = "task-tracker"
+    container_port   = 3000
+  }
+
+  health_check_grace_period_seconds = 60
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  wait_for_steady_state = true
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
+  depends_on = [aws_lb_listener_rule.ecs_canary]
+}
+
+resource "aws_appautoscaling_target" "ecs_app" {
+  max_capacity       = 3
+  min_capacity       = 1
+  resource_id        = "service/${aws_ecs_cluster.tt_ecs.name}/${aws_ecs_service.app.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "ecs_app" {
+  name               = "${local.name}-ecs-app"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_app.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_app.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_app.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+
+    target_value = 70
+  }
 }
