@@ -74,6 +74,10 @@ resource "aws_ecs_task_definition" "tt_task" {
     cpu_architecture        = "X86_64"
   }
 
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   container_definitions = jsonencode([
     { name      = "task-tracker"
       image     = var.app_image
