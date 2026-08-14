@@ -156,25 +156,6 @@ resource "aws_lb_target_group" "app_ecs" {
   tags = merge(local.tags, { Name = "${local.name}-app-ecs-tg" })
 }
 
-resource "aws_lb_listener_rule" "ecs_canary" {
-  listener_arn = aws_lb_listener.app_https.arn
-  priority     = 100
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app_ecs.arn
-  }
-
-  condition {
-    http_header {
-      http_header_name = "X-Canary"
-      values           = ["ecs"]
-    }
-  }
-
-  tags = merge(local.tags, { Name = "${local.name}-ecs-canary" })
-}
-
 resource "aws_ecs_service" "app" {
   name            = "${local.name}-app"
   cluster         = aws_ecs_cluster.tt_ecs.id
@@ -210,7 +191,9 @@ resource "aws_ecs_service" "app" {
     ignore_changes = [desired_count]
   }
 
-  depends_on = [aws_lb_listener_rule.ecs_canary]
+  # ECS rejects a target group no load balancer references -> the listener must exist first.
+  # Nothing else orders these two, since both only reference the target group.
+  depends_on = [aws_lb_listener.app_https]
 }
 
 resource "aws_appautoscaling_target" "ecs_app" {

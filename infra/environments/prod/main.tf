@@ -9,6 +9,5 @@ module "app_stack" {
   db_multi_az            = true
   db_allocated_storage   = 40
   db_snapshot_identifier = null
-  app_instance_type      = "t3.small"
   app_image              = var.app_image
 }

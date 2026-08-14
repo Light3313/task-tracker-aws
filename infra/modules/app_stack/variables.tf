@@ -38,11 +38,6 @@ variable "db_snapshot_identifier" {
   type        = string
 }
 
-variable "app_instance_type" {
-  description = "EC2 instance type for the app (example: 't4g.micro')"
-  type        = string
-}
-
 variable "app_image" {
   description = "ECR image URI for the app container"
   type        = string
