@@ -109,6 +109,18 @@ resource "aws_ecs_task_definition" "tt_task" {
         }
       }
 
+      readonlyRootFilesystem = true
+      user                   = "1000"
+      linuxParameters = {
+        tmpfs = [
+          {
+            containerPath = "/tmp"
+            size          = 64
+            mountOptions  = ["noexec", "nosuid", "nodev"]
+          }
+        ]
+      }
+
       healthCheck = {
         command     = ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/healthz || exit 1"]
         interval    = 30
