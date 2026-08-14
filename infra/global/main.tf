@@ -40,17 +40,19 @@ data "aws_iam_policy_document" "deployer_policy" {
     sid    = "InfraServices"
     effect = "Allow"
     actions = [
-      "ec2:*",                  # VPC, subnets, IGW, route tables, SGs, instances, EIP/NAT, ENIs, flow logs, EBS encryption defaults
-      "elasticloadbalancing:*", # ALB, target group, listener, attachment
-      "rds:*",                  # DB instance + subnet group
-      "iam:*",                  # app role/instance-profile/policies (+ this deployer role itself)
-      "kms:*",                  # storage encryption keys (RDS/EBS default + customer-managed CMK)
-      "logs:*",                 # CloudWatch Logs group for VPC flow logs
-      "ssm:*",                  # /task-tracker/* parameters + SSM-managed instances + public AMI params
-      "secretsmanager:*",       # RDS master password via managed secret
-      "ecr:*",                  # ECR repository for Docker image
-      "acm:*",                  # ACM certificate for ALB HTTPS listener
-      "route53:*",              # Route 53 hosted zone
+      "ec2:*",                     # VPC, subnets, IGW, route tables, SGs, instances, EIP/NAT, ENIs, flow logs, EBS encryption defaults
+      "elasticloadbalancing:*",    # ALB, target group, listener, attachment
+      "ecs:*",                     # cluster, task definition, service
+      "application-autoscaling:*", # ECS service autoscaling target + policy — its own service, not ecs:
+      "rds:*",                     # DB instance + subnet group
+      "iam:*",                     # app role/instance-profile/policies (+ this deployer role itself)
+      "kms:*",                     # storage encryption keys (RDS/EBS default + customer-managed CMK)
+      "logs:*",                    # CloudWatch Logs group for VPC flow logs
+      "ssm:*",                     # /task-tracker/* parameters + SSM-managed instances + public AMI params
+      "secretsmanager:*",          # RDS master password via managed secret
+      "ecr:*",                     # ECR repository for Docker image
+      "acm:*",                     # ACM certificate for ALB HTTPS listener
+      "route53:*",                 # Route 53 hosted zone
     ]
     resources = ["*"]
   }
@@ -114,11 +116,15 @@ data "aws_iam_policy_document" "planner_policy" {
     sid    = "ReadStackResources"
     effect = "Allow"
     actions = [
-      "ec2:Describe*",                  # VPC, subnets, IGW, route tables, SGs, ENIs, EIPs, instances, flow logs
-      "elasticloadbalancing:Describe*", # load balancer, target group, listeners, target health
-      "rds:Describe*",                  # DB instance and subnet group
-      "rds:ListTagsForResource",        # RDS tags are served by their own API, not by Describe*
-      "iam:Get*",                       # roles, inline policies, instance profile
+      "ec2:Describe*",                     # VPC, subnets, IGW, route tables, SGs, ENIs, EIPs, instances, flow logs
+      "elasticloadbalancing:Describe*",    # load balancer, target group, listeners, target health
+      "ecs:Describe*",                     # cluster, service, task definition
+      "ecs:List*",                         # ListTagsForResource — ECS tags are a separate API, like RDS
+      "application-autoscaling:Describe*", # scalable target + scaling policy
+      "application-autoscaling:List*",     # its tags, likewise separate
+      "rds:Describe*",                     # DB instance and subnet group
+      "rds:ListTagsForResource",           # RDS tags are served by their own API, not by Describe*
+      "iam:Get*",                          # roles, inline policies, instance profile
       "iam:List*",
       "kms:Describe*", # storage encryption key and its alias
       "kms:Get*",

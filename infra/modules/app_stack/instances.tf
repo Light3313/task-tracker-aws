@@ -65,103 +65,7 @@ resource "aws_instance" "nat" {
   tags = merge(local.tags, { Name = "${local.name}-nat" })
 }
 
-# App configuration
-resource "aws_instance" "app" {
-  ami                    = local.ami_al2023_x86_64
-  instance_type          = var.app_instance_type
-  vpc_security_group_ids = [aws_security_group.sg_ec2.id]
-  subnet_id              = aws_subnet.this["private_1a"].id
-  iam_instance_profile   = aws_iam_instance_profile.app.name
-
-  metadata_options {
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
-  }
-
-  root_block_device {
-    encrypted = true
-  }
-
-  user_data_replace_on_change = true
-
-  user_data = <<-EOF
-              #!/bin/bash
-              set -euxo pipefail
-
-              # AL2023 ships neither docker nor the aws cli — both come from the default repos
-              dnf install -y --allowerasing docker awscli-2
-              systemctl enable --now docker
-
-              REGION=us-east-1
-
-              # No secrets are handled here. The app fetches them at runtime with the instance
-              # role: the DB IAM token via @aws-sdk/rds-signer, and SESSION_SECRET from SSM.
-              # Keeping them out of user_data keeps them out of the instance system log.
-
-              # ECR login (token valid 12h); derive the registry host from the image URI itself
-              APP_IMAGE="${var.app_image}"
-              REGISTRY=$(echo "$APP_IMAGE" | cut -d/ -f1)
-              aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
-
-              docker pull "$APP_IMAGE"
-
-              # Run with container hardening: read-only rootfs + tmpfs, drop all caps,
-              # no-new-privileges, cgroup limits (mem/cpu/pids). Non-root (node) is already in the image.
-              docker run -d \
-                --name tt-app \
-                --restart unless-stopped \
-                -p 3000:3000 \
-                --read-only \
-                --tmpfs /tmp \
-                --cap-drop ALL \
-                --security-opt no-new-privileges \
-                --memory 256m \
-                --cpus 0.5 \
-                --pids-limit 100 \
-                --health-cmd 'wget -qO- http://127.0.0.1:3000/api/healthz || exit 1' \
-                --health-interval 10s \
-                -e PORT=3000 \
-                -e AWS_REGION="$REGION" \
-                -e PGHOST="${aws_db_instance.main.address}" \
-                -e PGPORT=5432 \
-                -e PGUSER=taskuser \
-                -e PGDATABASE=tasktracker \
-                -e PGSSLMODE=require \
-                "$APP_IMAGE"
-              EOF
-
-  tags = merge(local.tags, { Name = "${local.name}-app" })
-}
-
-
-# IAM
-data "aws_iam_policy_document" "ec2_task_tracker_assume_role" {
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_instance_profile" "app" {
-  name = "${local.name}-app-profile"
-  role = aws_iam_role.ec2_task_tracker.name
-}
-
-resource "aws_iam_role" "ec2_task_tracker" {
-  name               = "${local.name}-task-tracker"
-  assume_role_policy = data.aws_iam_policy_document.ec2_task_tracker_assume_role.json
-}
-
-resource "aws_iam_role_policy_attachment" "tt_ssm" {
-  role       = aws_iam_role.ec2_task_tracker.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
+# IAM — policy documents consumed by the ECS task role (see ecs.tf)
 data "aws_iam_policy_document" "ssm_read_task_tracker" {
   statement {
     sid    = "ReadTaskTrackerParams"
@@ -189,38 +93,6 @@ data "aws_iam_policy_document" "ssm_read_task_tracker" {
   }
 }
 
-data "aws_iam_policy_document" "ecr_pull_task_tracker" {
-  statement {
-    sid       = "EcrAuth"
-    effect    = "Allow"
-    actions   = ["ecr:GetAuthorizationToken"]
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "EcrPull"
-    effect = "Allow"
-    actions = [
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage",
-    ]
-    resources = ["arn:aws:ecr:us-east-1:486949319589:repository/task-tracker"]
-  }
-}
-
-resource "aws_iam_role_policy" "ssm_read_task_tracker" {
-  name   = "${local.name}-ssm-read"
-  role   = aws_iam_role.ec2_task_tracker.id
-  policy = data.aws_iam_policy_document.ssm_read_task_tracker.json
-}
-
-resource "aws_iam_role_policy" "ecr_pull_task_tracker" {
-  name   = "${local.name}-ecr-pull"
-  role   = aws_iam_role.ec2_task_tracker.id
-  policy = data.aws_iam_policy_document.ecr_pull_task_tracker.json
-}
-
 data "aws_iam_policy_document" "rds_connect_task_tracker" {
   statement {
     sid       = "RdsIamConnect"
@@ -228,12 +100,6 @@ data "aws_iam_policy_document" "rds_connect_task_tracker" {
     actions   = ["rds-db:connect"]
     resources = ["arn:aws:rds-db:us-east-1:486949319589:dbuser:${aws_db_instance.main.resource_id}/taskuser"]
   }
-}
-
-resource "aws_iam_role_policy" "rds_connect_task_tracker" {
-  name   = "${local.name}-rds-connect"
-  role   = aws_iam_role.ec2_task_tracker.id
-  policy = data.aws_iam_policy_document.rds_connect_task_tracker.json
 }
 
 # ALB
@@ -249,30 +115,6 @@ resource "aws_lb" "app" {
   enable_deletion_protection = false
 
   tags = merge(local.tags, { Name = "${local.name}-app-alb" })
-}
-
-resource "aws_lb_target_group" "app" {
-  name     = "${local.name}-app-tg"
-  port     = 3000
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    path                = "/api/healthz"
-    interval            = 10
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    matcher             = "200"
-  }
-
-  tags = merge(local.tags, { Name = "${local.name}-app-tg" })
-}
-
-resource "aws_lb_target_group_attachment" "app" {
-  target_group_arn = aws_lb_target_group.app.arn
-  target_id        = aws_instance.app.id
-  port             = 3000
 }
 
 resource "aws_lb_listener" "app" {
@@ -300,6 +142,6 @@ resource "aws_lb_listener" "app_https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = aws_lb_target_group.app_ecs.arn
   }
 }
