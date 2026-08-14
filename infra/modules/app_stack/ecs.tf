@@ -1,11 +1,17 @@
 resource "aws_ecs_cluster" "tt_ecs" {
   name = "${local.name}-cluster"
 
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+
   tags = merge(local.tags, { Name = "${local.name}-cluster" })
 }
 
 # Group created here, not by the agent — AmazonECSTaskExecutionRolePolicy grants
 # CreateLogStream/PutLogEvents but not CreateLogGroup
+#trivy:ignore:AVD-AWS-0017 default CWL encryption is sufficient
 resource "aws_cloudwatch_log_group" "ecs_logs" {
   name              = "/ecs/${local.name}"
   retention_in_days = 7
