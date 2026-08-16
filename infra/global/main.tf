@@ -310,3 +310,154 @@ resource "aws_kms_alias" "rds_dev" {
   name          = "alias/tt-dev-rds"
   target_key_id = aws_kms_key.rds_dev.key_id
 }
+
+resource "aws_kms_key" "rds_prod" {
+  description             = "CMK for tt-prod RDS storage encryption"
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+  policy                  = data.aws_iam_policy_document.rds_kms.json
+
+  tags = {
+    Name        = "tt-prod-rds-kms"
+    Project     = "task-tracker"
+    Environment = "prod"
+  }
+}
+
+resource "aws_kms_alias" "rds_prod" {
+  name          = "alias/tt-prod-rds"
+  target_key_id = aws_kms_key.rds_prod.key_id
+}
+
+# prod keeps its own hostname — dev holds app.kukharets.dev and stays live
+resource "aws_acm_certificate" "app_prod" {
+  domain_name       = "app-prod.kukharets.dev"
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "app_prod_cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.app_prod.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = aws_route53_zone.main.zone_id
+}
+
+resource "aws_acm_certificate_validation" "app_prod" {
+  certificate_arn         = aws_acm_certificate.app_prod.arn
+  validation_record_fqdns = [for record in aws_route53_record.app_prod_cert_validation : record.fqdn]
+}
+
+# IAM prod deployment role — separate from the dev deployer: prod rights != dev rights
+data "aws_iam_policy_document" "deployer_prod_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::486949319589:user/Light-admin"]
+    }
+  }
+
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    # environment:prod — minted only for a job that declared the gated environment,
+    # so the approval is what stands between a push and these credentials.
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:Light3313@202292607/task-tracker-aws@1301640311:environment:prod"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "deployer_prod_policy" {
+  statement {
+    sid    = "InfraServices"
+    effect = "Allow"
+    actions = [
+      "ec2:*",                     # VPC, subnets, IGW, route tables, SGs, NAT instance, EIP, ENIs, flow logs
+      "elasticloadbalancing:*",    # ALB, target group, listeners
+      "ecs:*",                     # cluster, task definition, service
+      "application-autoscaling:*", # scalable target + policy
+      "rds:*",                     # DB instance + subnet group
+      "iam:*",                     # task/execution/flow-log roles and their inline policies
+      "kms:*",                     # CMK lookup + the grant RDS takes on it
+      "logs:*",                    # flow-log and ECS log groups
+      "secretsmanager:*",          # manage_master_user_password -> RDS creates the secret
+      "route53:*",                 # the alias record for the prod hostname
+    ]
+    resources = ["*"]
+  }
+
+  # Certificate lives in this stack — prod reads it, never issues one.
+  # No ecr: at all — the pull is the execution role's job at runtime, not Terraform's.
+  statement {
+    sid    = "ReadGlobalCertificate"
+    effect = "Allow"
+    actions = [
+      "acm:Describe*",
+      "acm:List*",
+      "acm:Get*",
+    ]
+    resources = ["*"]
+  }
+
+  # Prod state only — an approved prod apply must not be able to write dev's state.
+  statement {
+    sid    = "TerraformStateBackend"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = ["arn:aws:s3:::tt-tfstate-486949319589/task-tracker/prod/*"]
+  }
+
+  # Bucket-level, unscoped — the backend lists on init; the objects are what matter.
+  statement {
+    sid       = "TerraformStateBucketList"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::tt-tfstate-486949319589"]
+  }
+}
+
+resource "aws_iam_role" "terraform_deployer_prod" {
+  name               = "tt-terraform-deployer-prod"
+  assume_role_policy = data.aws_iam_policy_document.deployer_prod_trust.json
+}
+
+resource "aws_iam_role_policy" "deployer_prod_policy" {
+  name   = "tt-terraform-deployer-prod-policy"
+  role   = aws_iam_role.terraform_deployer_prod.id
+  policy = data.aws_iam_policy_document.deployer_prod_policy.json
+}
