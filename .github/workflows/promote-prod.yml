@@ -1,0 +1,82 @@
+name: Promote to Production
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  DEV_CLUSTER: tt-dev-cluster
+  DEV_SERVICE: tt-dev-app
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::486949319589:role/tt-terraform-deployer-prod
+          aws-region: us-east-1
+
+      - name: Resolve the image dev is running
+        id: dev_image
+        run: |
+          set -euo pipefail
+
+          # The service's live revision, not the newest task definition.
+          revision=$(aws ecs describe-services \
+            --cluster "$DEV_CLUSTER" --services "$DEV_SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          image=$(aws ecs describe-task-definition \
+            --task-definition "$revision" \
+            --query 'taskDefinition.containerDefinitions[0].image' --output text)
+
+          case "$image" in
+            *@sha256:*) ;;
+            *) echo "::error::dev is running a mutable reference, not a digest: $image" ; exit 1 ;;
+          esac
+
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Record what is being promoted
+        env:
+          APP_IMAGE: ${{ steps.dev_image.outputs.image }}
+        run: |
+          {
+            echo "### Promoting to prod"
+            echo ""
+            echo "- Image: \`${APP_IMAGE}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.7
+
+      - name: Apply the prod stack
+        working-directory: infra/environments/prod
+        env:
+          TF_VAR_app_image: ${{ steps.dev_image.outputs.image }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+      - name: Report deployed URL
+        working-directory: infra/environments/prod
+        run: |
+          {
+            echo "### Deployed to prod"
+            echo ""
+            echo "- App: https://$(terraform output -raw app_url)"
+          } >> "$GITHUB_STEP_SUMMARY"
