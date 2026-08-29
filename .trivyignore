@@ -8,6 +8,19 @@
 # Accepted: 2026-06-23. Review: when Kubernetes probes are introduced — confirm they cover this.
 AVD-DS-0026
 
+# CVE-2026-14456 (HIGH): libssl3 / libcrypto3 3.5.7-r0 in the node:24-alpine3.24 base.
+# Reason: fixed by Alpine in 3.5.8-r0, but the base image has not been rebuilt yet — there is
+#   nothing to patch from this repository. `apk upgrade` here would report clean without changing
+#   what the app actually uses: node is not linked against these libraries at all
+#   (`ldd $(which node)` -> musl, libstdc++, libgcc only), it carries its own OpenSSL.
+# Actual exploitability: the sole dynamic consumer in the image is busybox `ssl_client`, reached
+#   only by `wget https://`. Nothing in the runtime does that — the health check is plain HTTP on
+#   loopback. Note node reports openssl 3.5.7 as well, so its bundled copy may carry the same
+#   defect; that is a base-image rebuild, not an apk upgrade.
+# Accepted: 2026-08-29. Review: 2026-09-30, or sooner — drop this line once the base image ships
+#   3.5.8-r0 and confirm the scan is green without it.
+CVE-2026-14456
+
 # --- TEMPLATE for future no-fix CVEs (when no upstream fix exists yet) ---
 # CVE-XXXX-XXXXX
 #   Reason: no fix available upstream (e.g. openssl/zlib in alpine).
