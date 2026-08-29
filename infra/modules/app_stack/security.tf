@@ -1,3 +1,29 @@
+# App host moved EC2 -> Fargate; addresses renamed to match. State-only, no API calls.
+moved {
+  from = aws_security_group.sg_ec2
+  to   = aws_security_group.sg_app
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.ec2_from_alb_3000
+  to   = aws_vpc_security_group_ingress_rule.app_from_alb_3000
+}
+
+moved {
+  from = aws_vpc_security_group_egress_rule.ec2_egress_all
+  to   = aws_vpc_security_group_egress_rule.app_egress_all
+}
+
+moved {
+  from = aws_vpc_security_group_egress_rule.ec2_to_rds_5432
+  to   = aws_vpc_security_group_egress_rule.app_to_rds_5432
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.rds_from_ec2_5432
+  to   = aws_vpc_security_group_ingress_rule.rds_from_app_5432
+}
+
 # SG ALB
 resource "aws_security_group" "sg_alb" {
   vpc_id = aws_vpc.main.id
@@ -30,25 +56,25 @@ resource "aws_vpc_security_group_ingress_rule" "alb_from_internet_443" {
 resource "aws_vpc_security_group_egress_rule" "alb_egress_all" {
   security_group_id = aws_security_group.sg_alb.id
 
-  description                  = "Forward to the app instances on port 3000"
+  description                  = "Forward to the app tasks on port 3000"
   ip_protocol                  = "tcp"
-  referenced_security_group_id = aws_security_group.sg_ec2.id
+  referenced_security_group_id = aws_security_group.sg_app.id
   from_port                    = 3000
   to_port                      = 3000
 }
 
-# SG EC2 
-resource "aws_security_group" "sg_ec2" {
+# SG app tasks
+resource "aws_security_group" "sg_app" {
   vpc_id = aws_vpc.main.id
 
   description = "Allow inbound 3000 from sg_alb"
 
-  tags = merge(local.tags, { Name = "${local.name}-sg-ec2" })
+  tags = merge(local.tags, { Name = "${local.name}-sg-app" })
 
 }
 
-resource "aws_vpc_security_group_ingress_rule" "ec2_from_alb_3000" {
-  security_group_id            = aws_security_group.sg_ec2.id
+resource "aws_vpc_security_group_ingress_rule" "app_from_alb_3000" {
+  security_group_id            = aws_security_group.sg_app.id
   referenced_security_group_id = aws_security_group.sg_alb.id
 
   description = "Inbound app traffic from the ALB on port 3000"
@@ -58,8 +84,8 @@ resource "aws_vpc_security_group_ingress_rule" "ec2_from_alb_3000" {
 }
 
 #trivy:ignore:AVD-AWS-0104 Outbound HTTPS to ECR/SSM/S3 via NAT
-resource "aws_vpc_security_group_egress_rule" "ec2_egress_all" {
-  security_group_id = aws_security_group.sg_ec2.id
+resource "aws_vpc_security_group_egress_rule" "app_egress_all" {
+  security_group_id = aws_security_group.sg_app.id
 
   description = "Outbound HTTPS to ECR/SSM/S3 via NAT"
   ip_protocol = "tcp"
@@ -68,8 +94,8 @@ resource "aws_vpc_security_group_egress_rule" "ec2_egress_all" {
   to_port     = 443
 }
 
-resource "aws_vpc_security_group_egress_rule" "ec2_to_rds_5432" {
-  security_group_id            = aws_security_group.sg_ec2.id
+resource "aws_vpc_security_group_egress_rule" "app_to_rds_5432" {
+  security_group_id            = aws_security_group.sg_app.id
   referenced_security_group_id = aws_security_group.sg_rds.id
 
   description = "Outbound PostgreSQL to the RDS instance"
@@ -87,11 +113,11 @@ resource "aws_security_group" "sg_rds" {
   tags = merge(local.tags, { Name = "${local.name}-sg-rds" })
 }
 
-resource "aws_vpc_security_group_ingress_rule" "rds_from_ec2_5432" {
+resource "aws_vpc_security_group_ingress_rule" "rds_from_app_5432" {
   security_group_id            = aws_security_group.sg_rds.id
-  referenced_security_group_id = aws_security_group.sg_ec2.id
+  referenced_security_group_id = aws_security_group.sg_app.id
 
-  description = "Inbound PostgreSQL from the app instances"
+  description = "Inbound PostgreSQL from the app tasks"
   ip_protocol = "tcp"
   from_port   = 5432
   to_port     = 5432

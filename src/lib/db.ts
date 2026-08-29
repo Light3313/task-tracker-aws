@@ -10,7 +10,8 @@ let pool: Pool | undefined;
 //   - DATABASE_URL present -> local/dev: plain connection string, password auth, no TLS.
 //   - DATABASE_URL absent   -> AWS: IAM database authentication. No stored password —
 //     a short-lived (~15 min) token is minted per new physical connection from the
-//     instance role's IMDS credentials, and TLS is mandatory.
+//     task role's credentials (ECS hands them out at 169.254.170.2, not via IMDS),
+//     and TLS is mandatory.
 function buildPoolConfig(): PoolConfig {
   const url = config.databaseUrl;
   if (url) {

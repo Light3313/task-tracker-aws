@@ -168,7 +168,7 @@ resource "aws_ecs_service" "app" {
       aws_subnet.this["private_1a"].id,
       aws_subnet.this["private_1b"].id,
     ]
-    security_groups  = [aws_security_group.sg_ec2.id]
+    security_groups  = [aws_security_group.sg_app.id]
     assign_public_ip = false
   }
 
