@@ -50,6 +50,10 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
 
+      # Two passes, because one cannot do both jobs. SARIF ignores `severity` by
+      # design — the action reports every level so the Security tab stays complete
+      # — which would make `exit-code` fire on LOW as well. So: report here, gate
+      # below. The report must never fail the job, or the upload never runs.
       - name: Scan image for vulnerabilities (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -57,10 +61,9 @@ jobs:
           image-ref: task-tracker:${{ github.sha }}
           format: sarif
           output: trivy-image.sarif
-          exit-code: 1
+          exit-code: 0
           ignore-unfixed: true
           vuln-type: os,library
-          severity: 'CRITICAL,HIGH'
 
       - name: Upload image scan results
         if: always()
@@ -68,6 +71,21 @@ jobs:
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
+
+      # The gate. `table` so the findings land in the log — with `sarif` they go
+      # to a file and a red job says nothing about what broke it. Same local tag,
+      # so the image is not rebuilt; trivy and its database are already cached.
+      - name: Fail the build on high severity findings (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: task-tracker:${{ github.sha }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: 'CRITICAL,HIGH'
+          skip-setup-trivy: true
 
   config-scan:
     runs-on: ubuntu-latest
