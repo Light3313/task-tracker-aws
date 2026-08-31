@@ -68,6 +68,7 @@ jobs:
         working-directory: infra/environments/prod
         env:
           TF_VAR_app_image: ${{ steps.dev_image.outputs.image }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: |
           terraform init
           terraform apply -auto-approve

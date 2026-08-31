@@ -10,4 +10,5 @@ module "app_stack" {
   db_allocated_storage   = 40
   db_snapshot_identifier = null
   app_image              = var.app_image
+  alert_email            = var.alert_email
 }

@@ -163,6 +163,8 @@ jobs:
         working-directory: infra/environments/dev
         id: plan
         continue-on-error: true
+        env:
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: terraform plan -var "app_image=$IMAGE" -input=false -no-color -lock=false
 
       - name: Report Terraform plan
