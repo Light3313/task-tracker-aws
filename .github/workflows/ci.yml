@@ -96,6 +96,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Two passes, same reason as the image scan above: the action leaves
+      # limit-severities-for-sarif at false, so SARIF carries every level and one step
+      # would gate on LOW as well. Report here, upload, then gate — a red gate must not
+      # skip the upload.
       - name: Scan Terraform for misconfigurations (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -103,8 +107,7 @@ jobs:
           scan-ref: infra/
           format: sarif
           output: trivy-config.sarif
-          exit-code: 1
-          severity: 'CRITICAL,HIGH'
+          exit-code: 0
 
       - name: Upload Terraform scan results
         if: always()
@@ -112,6 +115,18 @@ jobs:
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
+
+      # The gate. `table` so the findings land in the log instead of a file; trivy and its
+      # database are already set up by the step above.
+      - name: Fail the build on high severity misconfigurations (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra/
+          format: table
+          exit-code: 1
+          severity: 'CRITICAL,HIGH'
+          skip-setup-trivy: true
 
   terraform-plan:
     runs-on: ubuntu-latest
