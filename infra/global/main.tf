@@ -48,6 +48,8 @@ data "aws_iam_policy_document" "deployer_policy" {
       "iam:*",                     # app role/instance-profile/policies (+ this deployer role itself)
       "kms:*",                     # storage encryption keys (RDS/EBS default + customer-managed CMK)
       "logs:*",                    # CloudWatch Logs group for VPC flow logs
+      "cloudwatch:*",              # metric alarms and the dashboard — Logs is a separate service, above
+      "sns:*",                     # alert topic and its email subscription
       "ssm:*",                     # /task-tracker/* parameters + SSM-managed instances + public AMI params
       "secretsmanager:*",          # RDS master password via managed secret
       "ecr:*",                     # ECR repository for Docker image
@@ -131,6 +133,11 @@ data "aws_iam_policy_document" "planner_policy" {
       "kms:List*",
       "logs:Describe*",           # flow-log group
       "logs:ListTagsForResource", # log group tags, likewise a separate API
+      "cloudwatch:Describe*",     # metric alarms
+      "cloudwatch:Get*",          # GetDashboard — the dashboard body is not in any Describe
+      "cloudwatch:List*",         # alarm tags and dashboards
+      "sns:Get*",                 # topic and subscription attributes — SNS has no Describe*
+      "sns:List*",                # subscriptions and tags
       "acm:Describe*",            # certificate resolved for the HTTPS listener
       "acm:List*",
       "acm:Get*",     # public cert body; the private key needs acm:ExportCertificate, not granted
@@ -411,6 +418,8 @@ data "aws_iam_policy_document" "deployer_prod_policy" {
       "iam:*",                     # task/execution/flow-log roles and their inline policies
       "kms:*",                     # CMK lookup + the grant RDS takes on it
       "logs:*",                    # flow-log and ECS log groups
+      "cloudwatch:*",              # metric alarms and the dashboard
+      "sns:*",                     # alert topic and its email subscription
       "secretsmanager:*",          # manage_master_user_password -> RDS creates the secret
       "route53:*",                 # the alias record for the prod hostname
     ]
