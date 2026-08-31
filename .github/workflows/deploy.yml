@@ -71,6 +71,8 @@ jobs:
 
       - name: Deploy with Terraform
         working-directory: infra/environments/dev
+        env:
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: |
           terraform init
           terraform apply -auto-approve -var "app_image=${{ needs.build-and-push.outputs.image }}"

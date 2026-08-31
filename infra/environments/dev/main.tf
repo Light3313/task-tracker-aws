@@ -10,4 +10,5 @@ module "app_stack" {
   db_allocated_storage   = 20
   db_snapshot_identifier = "tt-postgres-cmk-2026-07-28"
   app_image              = var.app_image
+  alert_email            = var.alert_email
 }
