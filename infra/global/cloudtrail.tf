@@ -326,6 +326,25 @@ data "aws_iam_policy_document" "s3_access_logs" {
       values   = [data.aws_caller_identity.current.account_id]
     }
   }
+
+  statement {
+    sid    = "ALBAccessLogsPolicy"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.s3_access_logs.arn}/alb/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:${data.aws_partition.current.partition}:elasticloadbalancing:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:loadbalancer/*"]
+    }
+  }
 }
 
 #trivy:ignore:AVD-AWS-0017 default CWL encryption is sufficient

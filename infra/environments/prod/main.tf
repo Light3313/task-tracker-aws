@@ -9,6 +9,7 @@ module "app_stack" {
   db_multi_az            = true
   db_allocated_storage   = 40
   db_snapshot_identifier = null
+  access_logs_bucket     = "s3-access-logs-486949319589"
   app_image              = var.app_image
   alert_email            = var.alert_email
 }

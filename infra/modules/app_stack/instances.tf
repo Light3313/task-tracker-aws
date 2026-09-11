@@ -114,6 +114,12 @@ resource "aws_lb" "app" {
   drop_invalid_header_fields = true
   enable_deletion_protection = false
 
+  access_logs {
+    bucket  = var.access_logs_bucket
+    prefix  = "alb"
+    enabled = true
+  }
+
   tags = merge(local.tags, { Name = "${local.name}-app-alb" })
 }
 
