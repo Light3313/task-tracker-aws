@@ -295,7 +295,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "s3_access_logs" {
   }
 }
 
-# ACLs off -> log delivery is granted by policy, not by a LogDelivery ACL
 resource "aws_s3_bucket_policy" "s3_access_logs" {
   bucket = aws_s3_bucket.s3_access_logs.id
   policy = data.aws_iam_policy_document.s3_access_logs.json
@@ -372,7 +371,7 @@ resource "aws_cloudtrail" "this" {
   }
 }
 
-# Email subscriptions need a manual click -> an unconfirmed one accepts publishes and drops them
+# Email subscriptions need a manual click
 #trivy:ignore:AVD-AWS-0095 payload is a metric name and a state string
 resource "aws_sns_topic" "security_alerts" {
   name = "security-alerts"
@@ -386,6 +385,33 @@ resource "aws_sns_topic_subscription" "security_alerts_email" {
   endpoint  = var.alert_email
 }
 
+# events/cloudwatch have no IAM identity; account roles do and go through IAM
+data "aws_iam_policy_document" "security_alerts" {
+  statement {
+    sid    = "AllowServicePublish"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com", "cloudwatch.amazonaws.com"]
+    }
+
+    actions   = ["SNS:Publish"]
+    resources = [aws_sns_topic.security_alerts.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+resource "aws_sns_topic_policy" "security_alerts" {
+  arn    = aws_sns_topic.security_alerts.arn
+  policy = data.aws_iam_policy_document.security_alerts.json
+}
+
 # invokedBy set = AWS calling for the account; AwsServiceEvent = not an API call
 resource "aws_cloudwatch_log_metric_filter" "root_account_usage" {
   name           = "root-account-usage"
@@ -397,7 +423,7 @@ resource "aws_cloudwatch_log_metric_filter" "root_account_usage" {
     namespace = "Security"
     value     = "1"
 
-    # Without this the metric has no points between hits -> the alarm never leaves INSUFFICIENT_DATA
+    # Without this the metric has no points between hits, so the alarm never leaves INSUFFICIENT_DATA
     default_value = "0"
   }
 }
@@ -421,4 +447,60 @@ resource "aws_cloudwatch_metric_alarm" "root_account_usage" {
   ok_actions    = [aws_sns_topic.security_alerts.arn]
 
   tags = { Name = "root-account-usage" }
+}
+
+# Regional — us-east-1 only, other regions are trail-only
+resource "aws_guardduty_detector" "this" {
+  enable = true
+
+  finding_publishing_frequency = "FIFTEEN_MINUTES"
+
+  tags = { Name = "account-detector" }
+}
+
+resource "aws_guardduty_detector_feature" "this" {
+  for_each = {
+    S3_DATA_EVENTS         = "ENABLED"  # buckets including the CloudTrail one
+    RDS_LOGIN_EVENTS       = "ENABLED"  # tt-dev-postgres
+    EKS_AUDIT_LOGS         = "DISABLED" # no EKS
+    EKS_RUNTIME_MONITORING = "DISABLED" # no EKS
+    LAMBDA_NETWORK_LOGS    = "DISABLED" # no Lambda
+    EBS_MALWARE_PROTECTION = "DISABLED" # priced per GB scanned
+    RUNTIME_MONITORING     = "DISABLED" # needs a sidecar agent in every Fargate task
+  }
+
+  detector_id = aws_guardduty_detector.this.id
+  name        = each.key
+  status      = each.value
+}
+
+resource "aws_cloudwatch_event_rule" "guardduty_findings" {
+  name        = "guardduty-findings"
+  description = "GuardDuty findings of severity Medium and above"
+
+  event_pattern = jsonencode({
+    source        = ["aws.guardduty"]
+    "detail-type" = ["GuardDuty Finding"]
+    detail = {
+      severity = [{ numeric = [">=", 4] }]
+    }
+  })
+}
+
+# Simple message instead of raw JSON
+resource "aws_cloudwatch_event_target" "guardduty_to_sns" {
+  rule      = aws_cloudwatch_event_rule.guardduty_findings.name
+  target_id = "security-alerts"
+  arn       = aws_sns_topic.security_alerts.arn
+
+  input_transformer {
+    input_paths = {
+      severity = "$.detail.severity"
+      type     = "$.detail.type"
+      region   = "$.detail.region"
+      desc     = "$.detail.description"
+    }
+
+    input_template = "\"GuardDuty severity <severity> in <region>: <type>. <desc>\""
+  }
 }
