@@ -352,3 +352,54 @@ resource "aws_cloudtrail" "this" {
     include_management_events = true
   }
 }
+
+# Email subscriptions need a manual click -> an unconfirmed one accepts publishes and drops them
+#trivy:ignore:AVD-AWS-0095 payload is a metric name and a state string
+resource "aws_sns_topic" "security_alerts" {
+  name = "security-alerts"
+
+  tags = { Name = "security-alerts" }
+}
+
+resource "aws_sns_topic_subscription" "security_alerts_email" {
+  topic_arn = aws_sns_topic.security_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# invokedBy set = AWS calling for the account; AwsServiceEvent = not an API call
+resource "aws_cloudwatch_log_metric_filter" "root_account_usage" {
+  name           = "root-account-usage"
+  log_group_name = aws_cloudwatch_log_group.cloudtrail_logs.name
+  pattern        = "{ $.userIdentity.type = \"Root\" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != \"AwsServiceEvent\" }"
+
+  metric_transformation {
+    name      = "RootAccountUsage"
+    namespace = "Security"
+    value     = "1"
+
+    # Without this the metric has no points between hits -> the alarm never leaves INSUFFICIENT_DATA
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "root_account_usage" {
+  alarm_name        = "root-account-usage"
+  alarm_description = "Root credentials were used"
+
+  namespace   = "Security"
+  metric_name = "RootAccountUsage"
+  statistic   = "Sum"
+  period      = 120
+
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 0
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.security_alerts.arn]
+  ok_actions    = [aws_sns_topic.security_alerts.arn]
+
+  tags = { Name = "root-account-usage" }
+}
