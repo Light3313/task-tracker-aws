@@ -9,6 +9,7 @@ module "app_stack" {
   db_multi_az            = false
   db_allocated_storage   = 20
   db_snapshot_identifier = "tt-postgres-cmk-2026-07-28"
+  access_logs_bucket     = "s3-access-logs-486949319589"
   app_image              = var.app_image
   alert_email            = var.alert_email
 }

@@ -38,6 +38,11 @@ variable "db_snapshot_identifier" {
   type        = string
 }
 
+variable "access_logs_bucket" {
+  description = "S3 bucket for ALB access logs - created in the global stack"
+  type        = string
+}
+
 variable "app_image" {
   description = "ECR image URI for the app container"
   type        = string
