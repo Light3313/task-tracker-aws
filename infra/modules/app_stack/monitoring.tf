@@ -59,25 +59,54 @@ resource "aws_cloudwatch_metric_alarm" "no_healthy_targets" {
 
 # Golden signal — errors, infrastructure side
 # ELB_5XX means no target could answer -> not the same incident as a target returning 500
-# No datapoints at all in steady state, hence notBreaching
+# Rate with the same volume gate as app_5xx_rate -> a single probe never pages
+# No traffic, no rate — an empty pool is no_healthy_targets
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   alarm_name        = "${local.name}-alb-5xx"
-  alarm_description = "ALB generated 5xx itself — no target was able to answer"
-
-  namespace   = "AWS/ApplicationELB"
-  metric_name = "HTTPCode_ELB_5XX_Count"
-  statistic   = "Sum"
-  period      = 60
-
-  dimensions = {
-    LoadBalancer = aws_lb.app.arn_suffix
-  }
+  alarm_description = "ALB generated 5xx for more than 5 % of requests over 5 minutes"
 
   comparison_operator = "GreaterThanThreshold"
-  threshold           = 0
+  threshold           = 5
   evaluation_periods  = 1
   datapoints_to_alarm = 1
   treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "e1"
+    expression  = "IF(m2 >= 20, 100 * m1 / m2, 0)"
+    label       = "ELB 5xx rate %"
+    return_data = true
+  }
+
+  metric_query {
+    id = "m1"
+
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "HTTPCode_ELB_5XX_Count"
+      period      = 300
+      stat        = "Sum"
+
+      dimensions = {
+        LoadBalancer = aws_lb.app.arn_suffix
+      }
+    }
+  }
+
+  metric_query {
+    id = "m2"
+
+    metric {
+      namespace   = "AWS/ApplicationELB"
+      metric_name = "RequestCount"
+      period      = 300
+      stat        = "Sum"
+
+      dimensions = {
+        LoadBalancer = aws_lb.app.arn_suffix
+      }
+    }
+  }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
