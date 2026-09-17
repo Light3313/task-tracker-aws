@@ -316,7 +316,7 @@ data "aws_iam_policy_document" "s3_access_logs" {
     condition {
       test     = "ArnLike"
       variable = "aws:SourceArn"
-      values   = [aws_s3_bucket.cloudtrail_logs.arn]
+      values   = [aws_s3_bucket.cloudtrail_logs.arn, aws_s3_bucket.config.arn]
     }
 
     condition {
