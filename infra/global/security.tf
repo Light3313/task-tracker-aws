@@ -472,6 +472,30 @@ resource "aws_guardduty_detector_feature" "this" {
   detector_id = aws_guardduty_detector.this.id
   name        = each.key
   status      = each.value
+
+  dynamic "additional_configuration" {
+    for_each = try(local.guardduty_agents[each.key], {})
+
+    content {
+      name   = additional_configuration.key
+      status = additional_configuration.value
+    }
+  }
+}
+
+# Attached by AWS itself — undeclared = drift on every plan
+locals {
+  guardduty_agents = {
+    EKS_RUNTIME_MONITORING = {
+      EKS_ADDON_MANAGEMENT = "DISABLED"
+    }
+
+    RUNTIME_MONITORING = {
+      EC2_AGENT_MANAGEMENT         = "DISABLED"
+      ECS_FARGATE_AGENT_MANAGEMENT = "DISABLED" # agent into every Fargate task
+      EKS_ADDON_MANAGEMENT         = "DISABLED"
+    }
+  }
 }
 
 resource "aws_cloudwatch_event_rule" "guardduty_findings" {
