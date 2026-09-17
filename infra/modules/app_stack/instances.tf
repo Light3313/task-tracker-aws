@@ -146,8 +146,31 @@ resource "aws_lb_listener" "app_https" {
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = data.aws_acm_certificate.alb_cert.arn
 
+  # Raw IP and *.elb.amazonaws.com
   default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      status_code  = "404"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "app_domain" {
+  listener_arn = aws_lb_listener.app_https.arn
+  priority     = 10
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app_ecs.arn
   }
+
+  condition {
+    host_header {
+      values = [var.app_domain_name]
+    }
+  }
+
+  tags = merge(local.tags, { Name = "${local.name}-app-domain" })
 }

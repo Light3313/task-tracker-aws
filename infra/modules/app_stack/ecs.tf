@@ -191,9 +191,9 @@ resource "aws_ecs_service" "app" {
     ignore_changes = [desired_count]
   }
 
-  # ECS rejects a target group no load balancer references -> the listener must exist first.
+  # ECS rejects a target group no load balancer references -> the rule must exist first.
   # Nothing else orders these two, since both only reference the target group.
-  depends_on = [aws_lb_listener.app_https]
+  depends_on = [aws_lb_listener_rule.app_domain]
 }
 
 resource "aws_appautoscaling_target" "ecs_app" {
