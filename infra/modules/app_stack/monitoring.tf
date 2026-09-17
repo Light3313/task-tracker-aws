@@ -129,7 +129,7 @@ resource "aws_cloudwatch_metric_alarm" "app_5xx_rate" {
 
   metric_query {
     id          = "e1"
-    expression  = "IF(m2 >= 20, 100 * FILL(m1,0) / m2, 0)"
+    expression  = "IF(m2 >= 20, 100 * m1 / m2, 0)"
     label       = "5xx rate %"
     return_data = true
   }
