@@ -6,6 +6,13 @@ resource "aws_vpc" "main" {
   tags = merge(local.tags, { Name = "${local.name}-vpc" })
 }
 
+# Undeletable by AWS — adopted empty so an SG-less launch gets no path out
+resource "aws_default_security_group" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = merge(local.tags, { Name = "${local.name}-default-sg" })
+}
+
 # AWS Subnets
 resource "aws_subnet" "this" {
   for_each = local.subnets
