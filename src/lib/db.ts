@@ -1,6 +1,7 @@
 import { Pool, type PoolConfig } from "pg";
 import { Signer } from "@aws-sdk/rds-signer";
 import { config } from "./config";
+import { addDbTime } from "./request-log";
 
 // Lazy singleton pool. Created on first query (request time), not at import time,
 // so `next build` doesn't try to open a DB connection.
@@ -54,6 +55,12 @@ export async function query<T = Record<string, unknown>>(
   text: string,
   params?: unknown[],
 ): Promise<T[]> {
-  const res = await getPool().query(text, params);
-  return res.rows as T[];
+  // Timed here, the one door to Postgres, so a slow request says whether the DB is why.
+  const started = performance.now();
+  try {
+    const res = await getPool().query(text, params);
+    return res.rows as T[];
+  } finally {
+    addDbTime(performance.now() - started);
+  }
 }

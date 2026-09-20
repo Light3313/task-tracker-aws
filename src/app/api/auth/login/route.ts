@@ -3,10 +3,11 @@ import { findUserByEmail, verifyPassword } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/session";
 import { logger } from "@/lib/logger";
 import { httpRequests } from "@/lib/metrics";
+import { withRequestLog } from "@/lib/request-log";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+async function login(req: NextRequest) {
   const route = "/api/auth/login";
   try {
     const { email, password } = await req.json();
@@ -36,3 +37,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
+
+export const POST = withRequestLog("/api/auth/login", login);
