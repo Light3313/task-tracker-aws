@@ -487,6 +487,133 @@ resource "aws_cloudwatch_metric_alarm" "root_account_usage" {
   tags = { Name = "root-account-usage" }
 }
 
+locals {
+  # CIS v1.4 4.4 — manual check in v5.0.0
+  iam_policy_events = [
+    "PutUserPolicy", "PutRolePolicy", "PutGroupPolicy",
+    "DeleteUserPolicy", "DeleteRolePolicy", "DeleteGroupPolicy",
+    "CreatePolicy", "DeletePolicy", "CreatePolicyVersion", "DeletePolicyVersion",
+    "AttachUserPolicy", "DetachUserPolicy", "AttachRolePolicy", "DetachRolePolicy",
+    "AttachGroupPolicy", "DetachGroupPolicy",
+  ]
+
+  s3_exposure_events = [
+    "PutBucketPublicAccessBlock", "DeleteBucketPublicAccessBlock",
+    "PutAccountPublicAccessBlock", "DeleteAccountPublicAccessBlock",
+    "PutBucketAcl", "PutBucketPolicy", "DeleteBucketPolicy",
+  ]
+
+  sg_change_events = [
+    "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress",
+    "RevokeSecurityGroupIngress", "RevokeSecurityGroupEgress",
+    "CreateSecurityGroup", "DeleteSecurityGroup", "ModifySecurityGroupRules",
+  ]
+
+  iam_policy_clause  = join(" || ", [for e in local.iam_policy_events : "($.eventName = \"${e}\")"])
+  s3_exposure_clause = join(" || ", [for e in local.s3_exposure_events : "($.eventName = \"${e}\")"])
+  sg_change_clause   = join(" || ", [for e in local.sg_change_events : "($.eventName = \"${e}\")"])
+}
+
+resource "aws_cloudwatch_log_metric_filter" "iam_policy_changes" {
+  name           = "iam-policy-changes"
+  log_group_name = aws_cloudwatch_log_group.cloudtrail_logs.name
+  pattern        = "{ ($.eventSource = \"iam.amazonaws.com\") && (${local.iam_policy_clause}) }"
+
+  metric_transformation {
+    name      = "IamPolicyChanges"
+    namespace = "Security"
+    value     = "1"
+
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "iam_policy_changes" {
+  alarm_name        = "iam-policy-changes"
+  alarm_description = "A policy document or an attachment changed"
+
+  namespace   = "Security"
+  metric_name = "IamPolicyChanges"
+  statistic   = "Sum"
+  period      = 300
+
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 0
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.security_alerts.arn]
+
+  tags = { Name = "iam-policy-changes" }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "s3_public_exposure" {
+  name           = "s3-public-exposure"
+  log_group_name = aws_cloudwatch_log_group.cloudtrail_logs.name
+  pattern        = "{ ($.eventSource = \"s3.amazonaws.com\") && (${local.s3_exposure_clause}) }"
+
+  metric_transformation {
+    name          = "S3PublicExposure"
+    namespace     = "Security"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "s3_public_exposure" {
+  alarm_name        = "s3-public-exposure"
+  alarm_description = "Public access block, bucket ACL or bucket policy changed"
+
+  namespace   = "Security"
+  metric_name = "S3PublicExposure"
+  statistic   = "Sum"
+  period      = 300
+
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 0
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.security_alerts.arn]
+
+  tags = { Name = "s3-public-exposure" }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "security_group_changes" {
+  name           = "security-group-changes"
+  log_group_name = aws_cloudwatch_log_group.cloudtrail_logs.name
+  pattern        = "{ ${local.sg_change_clause} }"
+
+  metric_transformation {
+    name          = "SecurityGroupChanges"
+    namespace     = "Security"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "security_group_changes" {
+  alarm_name        = "security-group-changes"
+  alarm_description = "A security group or one of its rules changed"
+
+  namespace   = "Security"
+  metric_name = "SecurityGroupChanges"
+  statistic   = "Sum"
+  period      = 300
+
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 0
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.security_alerts.arn]
+
+  tags = { Name = "security-group-changes" }
+}
+
 # Regional — us-east-1 only, other regions are trail-only
 resource "aws_guardduty_detector" "this" {
   enable = true
