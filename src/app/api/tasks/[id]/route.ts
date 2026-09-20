@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { withRequestLog } from "@/lib/request-log";
 
 export const dynamic = "force-dynamic";
 
 // PATCH /api/tasks/:id — update one of the current user's tasks (toggle done, edit text).
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function updateTask(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -38,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 // DELETE /api/tasks/:id — delete one of the current user's tasks.
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function deleteTask(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -51,3 +52,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ status: "deleted" });
 }
+
+export const PATCH = withRequestLog("/api/tasks/[id]", updateTask);
+export const DELETE = withRequestLog("/api/tasks/[id]", deleteTask);

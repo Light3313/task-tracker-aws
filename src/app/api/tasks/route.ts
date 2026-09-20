@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { httpRequests } from "@/lib/metrics";
+import { withRequestLog } from "@/lib/request-log";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/tasks — list the authenticated user's tasks.
-export async function GET() {
+async function listTasks() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -20,7 +21,7 @@ export async function GET() {
 }
 
 // POST /api/tasks — create a task owned by the authenticated user.
-export async function POST(req: NextRequest) {
+async function createTask(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -36,3 +37,6 @@ export async function POST(req: NextRequest) {
   httpRequests.inc({ method: "POST", route: "/api/tasks", status: "201" });
   return NextResponse.json({ task: rows[0] }, { status: 201 });
 }
+
+export const GET = withRequestLog("/api/tasks", listTasks);
+export const POST = withRequestLog("/api/tasks", createTask);
