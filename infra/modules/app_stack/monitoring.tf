@@ -310,3 +310,65 @@ resource "aws_cloudwatch_dashboard" "golden_signals" {
     ]
   })
 }
+
+resource "aws_cloudwatch_query_definition" "latency_by_route" {
+  name            = "${local.name}/latency-by-route"
+  log_group_names = [aws_cloudwatch_log_group.ecs_logs.name]
+
+  query_string = <<-EOT
+    fields @timestamp
+    | filter event = "request"
+    | stats count(*) as requests, pct(durMs, 50) as p50, pct(durMs, 95) as p95, pct(durMs, 99) as p99, max(durMs) as worst by route, status
+    | sort requests desc
+  EOT
+}
+
+# durMs > 0 -> no divide by zero on requests that never reached Postgres
+resource "aws_cloudwatch_query_definition" "db_share_by_route" {
+  name            = "${local.name}/db-share-by-route"
+  log_group_names = [aws_cloudwatch_log_group.ecs_logs.name]
+
+  query_string = <<-EOT
+    fields @timestamp
+    | filter event = "request" and durMs > 0
+    | stats count(*) as requests, avg(durMs) as avg_total_ms, avg(dbMs) as avg_db_ms, avg(dbMs) / avg(durMs) * 100 as db_pct by route
+    | sort db_pct desc
+  EOT
+}
+
+resource "aws_cloudwatch_query_definition" "errors_over_time" {
+  name            = "${local.name}/errors-over-time"
+  log_group_names = [aws_cloudwatch_log_group.ecs_logs.name]
+
+  query_string = <<-EOT
+    fields @timestamp
+    | filter event = "request" and status >= 400
+    | stats count(*) as errors by bin(5m) as window, route, status
+    | sort window desc, errors desc
+  EOT
+}
+
+resource "aws_cloudwatch_query_definition" "trace_one_request" {
+  name            = "${local.name}/trace-one-request"
+  log_group_names = [aws_cloudwatch_log_group.ecs_logs.name]
+
+  query_string = <<-EOT
+    fields @timestamp, ip, method, route, status, durMs, dbMs, event, msg
+    | filter reqId = "PASTE-X-Amzn-Trace-Id-HERE"
+    | sort @timestamp asc
+  EOT
+}
+
+# Failures alone name a locked-out user — failures then a success name an intrusion
+resource "aws_cloudwatch_query_definition" "logins_by_source" {
+  name            = "${local.name}/logins-by-source"
+  log_group_names = [aws_cloudwatch_log_group.ecs_logs.name]
+
+  query_string = <<-EOT
+    fields @timestamp
+    | filter event in ["login_failed", "login_success"]
+    | stats count(*) as attempts, earliest(@timestamp) as first_seen, latest(@timestamp) as last_seen by ip, email, event
+    | sort attempts desc
+  EOT
+}
+
