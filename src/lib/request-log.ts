@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextRequest } from "next/server";
 import { logger } from "./logger";
 
-type RequestState = { dbMs: number };
+type RequestState = { dbMs: number; reqId?: string; ip?: string };
 
 // Request-scoped, so db.ts can add its timing without every handler passing a counter down.
 const state = new AsyncLocalStorage<RequestState>();
@@ -10,6 +10,32 @@ const state = new AsyncLocalStorage<RequestState>();
 export function addDbTime(ms: number): void {
   const current = state.getStore();
   if (current) current.dbMs += ms;
+}
+
+// The ALB appends the address it saw to any X-Forwarded-For the client sent
+// (routing.http.xff_header_processing.mode = append, the default), so the LAST entry is the
+// balancer's and every earlier one is whatever the client chose to claim. Take the last, or a
+// brute-force count groups by an attacker-supplied string.
+// With routing.http.xff_client_port.enabled the entry becomes ip:port (IPv6: [ip]:port).
+function clientIp(req: NextRequest): string | undefined {
+  const entries = (req.headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const last = entries.at(-1);
+  if (!last) return undefined;
+
+  const bracketed = last.match(/^\[(.+)\]/); // IPv6 with the port appended
+  if (bracketed) return bracketed[1];
+  // Strip a trailing :port on IPv4 only — a bare IPv6 address is all colons.
+  return last.replace(/^(\d+\.\d+\.\d+\.\d+):\d+$/, "$1");
+}
+
+// For log lines written outside the request line itself (login_failed and the like), so they
+// carry the same two keys and join to it instead of floating free.
+export function requestFields(): { reqId?: string; ip?: string } {
+  const current = state.getStore();
+  return current ? { reqId: current.reqId, ip: current.ip } : {};
 }
 
 type Handler<C> = (req: NextRequest, ctx: C) => Promise<Response> | Response;
@@ -35,7 +61,11 @@ export function withRequestLog<C>(
 ): Handler<C> {
   return async (req, ctx) => {
     const started = performance.now();
-    const current: RequestState = { dbMs: 0 };
+    const current: RequestState = {
+      dbMs: 0,
+      reqId: req.headers.get("x-amzn-trace-id") ?? undefined,
+      ip: clientIp(req),
+    };
 
     return state.run(current, async () => {
       let status = 500;
@@ -53,7 +83,8 @@ export function withRequestLog<C>(
         logger[levelFor(status, failed, options.quiet ?? false)](
           {
             event: "request",
-            reqId: req.headers.get("x-amzn-trace-id") ?? undefined,
+            reqId: current.reqId,
+            ip: current.ip,
             method: req.method,
             route,
             status,

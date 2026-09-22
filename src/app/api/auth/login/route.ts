@@ -3,7 +3,7 @@ import { findUserByEmail, verifyPassword } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/session";
 import { logger } from "@/lib/logger";
 import { httpRequests } from "@/lib/metrics";
-import { withRequestLog } from "@/lib/request-log";
+import { requestFields, withRequestLog } from "@/lib/request-log";
 
 export const dynamic = "force-dynamic";
 
@@ -20,15 +20,15 @@ async function login(req: NextRequest) {
     // so the endpoint doesn't reveal which emails are registered (user enumeration).
     const ok = user ? await verifyPassword(String(password), user.password_hash) : false;
     if (!user || !ok) {
-      // This log line is what a detection rule keys on
-      // ("repeated login_failed from one IP" -> brute-force alert).
-      logger.warn({ event: "login_failed", email }, "failed login");
+      // This log line is what a detection rule keys on: repeated login_failed from one ip,
+      // and the same ip succeeding right after, which is the pattern worth an alert.
+      logger.warn({ event: "login_failed", email, ...requestFields() }, "failed login");
       httpRequests.inc({ method: "POST", route, status: "401" });
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
     await setSessionCookie(user.id);
-    logger.info({ event: "login_success", userId: user.id }, "login success");
+    logger.info({ event: "login_success", userId: user.id, ...requestFields() }, "login success");
     httpRequests.inc({ method: "POST", route, status: "200" });
     return NextResponse.json({ id: user.id, email: user.email });
   } catch (err) {
