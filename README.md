@@ -1,7 +1,7 @@
 # task-tracker-aws
 
 A small Next.js + PostgreSQL task tracker, deployed to AWS entirely from Terraform and
-GitHub Actions. Live at **https://app.kukharets.dev**.
+GitHub Actions.
 
 The application itself is deliberately ordinary. The point of the repository is everything
 around it: how the infrastructure is described, how a commit reaches production, and which
